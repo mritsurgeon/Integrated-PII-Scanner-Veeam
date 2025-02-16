@@ -20,16 +20,31 @@ import torch
 load_dotenv()
 
 # Configuration - Pull from environment variables or use defaults
-DB_FILE = os.getenv("DB_FILE", "pii_scan_history.db")
+DB_FILE = os.path.abspath(os.getenv("DB_FILE", "pii_scan_history.db"))
 ALLOWED_FILE_TYPES = {".doc", ".docx", ".xlsx", ".pptx", ".txt"}
 MODEL_NAME = os.getenv("MODEL_NAME", "roberta-base")
 MAX_CHUNK_LENGTH = int(os.getenv("MAX_CHUNK_LENGTH", "400"))
 LITE_SCAN_LIMIT = 1024 * 1024  # 1MB limit for lite scan
 PII_MODEL_NAME = os.getenv("PII_MODEL_NAME", "urchade/gliner_multi_pii-v1")
-PII_LABELS = [
-    "person", "email", "phone number", "address", "Social Security Number",
-    "credit card number", "passport number", "driver licence", "company"
+
+# Default PII labels if not specified in .env
+DEFAULT_PII_LABELS = [
+    "person", "organization", "phone number", "address", "passport number",
+    "email", "credit card number", "social security number"
 ]
+
+# Load PII labels from environment
+PII_LABELS = os.getenv("PII_LABELS", ",".join(DEFAULT_PII_LABELS)).split(",")
+PII_LABELS_FULL = os.getenv("PII_LABELS_FULL", ",".join(PII_LABELS)).split(",")
+
+# Print configured labels
+print(colored("\nConfigured PII labels:", "cyan"))
+print(colored("Basic labels:", "yellow"))
+for label in PII_LABELS:
+    print(colored(f"  - {label}", "yellow"))
+
+print(colored("\nFull label set available:", "green"))
+print(colored(f"  Total labels: {len(PII_LABELS_FULL)}", "green"))
 
 # Add these constants after the existing config section
 EXIT_SUCCESS = 0
@@ -81,23 +96,48 @@ except Exception as e:
     gliner_model = None
 
 def init_db():
-    """Initialize the SQLite database."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS scan_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_path TEXT NOT NULL UNIQUE,
-            scan_time TEXT NOT NULL,
-            file_size INTEGER,
-            file_modified TEXT,
-            file_checksum TEXT,
-            scan_type TEXT,
-            pii_entities TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    """Initialize the SQLite database with proper error handling."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # Drop existing table if it exists
+        cursor.execute("DROP TABLE IF EXISTS scan_history")
+        
+        # Create the scan_history table with proper constraints
+        cursor.execute("""
+            CREATE TABLE scan_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL,
+                scan_time TEXT NOT NULL,
+                file_size INTEGER,
+                file_modified TEXT,
+                file_checksum TEXT NOT NULL,
+                scan_type TEXT CHECK(scan_type IN ('lite', 'full')),
+                pii_entities TEXT,
+                UNIQUE(file_checksum, scan_type)
+            )
+        """)
+        
+        # Add index on checksum for faster lookups
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_checksum_type 
+            ON scan_history(file_checksum, scan_type)
+        """)
+        
+        conn.commit()
+        print(colored("Database initialized successfully at: " + DB_FILE, "green"))
+        
+    except sqlite3.Error as e:
+        print(colored(f"Database initialization error: {e}", "red"))
+        print(colored(f"Error details: {str(e)}", "red"))
+        if conn:
+            conn.rollback()
+        sys.exit(EXIT_DB_ERROR)
+    finally:
+        if conn:
+            conn.close()
 
 def calculate_checksum(file_path, scan_type):
     """Calculate SHA256 checksum of a file."""
@@ -119,33 +159,83 @@ def calculate_checksum(file_path, scan_type):
         return None
 
 def is_file_scanned(file_path, checksum, scan_type):
-    """Check if file has already been scanned."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT COUNT(*) FROM scan_history
-        WHERE file_path = ? AND file_checksum = ? AND scan_type = ?
-    """, (file_path, checksum, scan_type))
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count > 0
+    """Check if file has been scanned with improved error handling."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # First check by checksum only
+        cursor.execute("""
+            SELECT file_path, scan_time 
+            FROM scan_history
+            WHERE file_checksum = ? AND scan_type = ?
+        """, (checksum, scan_type))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            original_path, last_scan = result
+            print(colored(f"File content already scanned on {last_scan}", "yellow"))
+            print(colored(f"Original file: {original_path}", "yellow"))
+            print(colored(f"Current file: {file_path}", "yellow"))
+            return True
+            
+        return False
+        
+    except sqlite3.Error as e:
+        print(colored(f"Database error while checking scan history: {e}", "red"))
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 def save_scan_result(file_path, pii_entities, file_size, file_modified, file_checksum, scan_type):
-    """Save scan results to database."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    now = datetime.now(timezone.utc).isoformat()
+    """Save scan results to database with improved error handling."""
+    conn = None
     try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        # Validate inputs
+        if not isinstance(file_size, int):
+            file_size = int(file_size)
+        
+        if not scan_type in ['lite', 'full']:
+            raise ValueError(f"Invalid scan_type: {scan_type}")
+            
+        if not file_checksum:
+            raise ValueError("file_checksum cannot be None")
+            
+        # Print debug info
+        print(colored(f"Saving scan result:", "cyan"))
+        print(colored(f"  Path: {file_path}", "cyan"))
+        print(colored(f"  Checksum: {file_checksum}", "cyan"))
+        print(colored(f"  Scan type: {scan_type}", "cyan"))
+            
+        # Insert or update the scan result
         cursor.execute("""
-            INSERT INTO scan_history 
+            INSERT OR REPLACE INTO scan_history 
             (file_path, scan_time, file_size, file_modified, file_checksum, scan_type, pii_entities)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (file_path, now, file_size, file_modified, file_checksum, scan_type, str(pii_entities)))
+        
         conn.commit()
-    except sqlite3.IntegrityError:
-        print(colored(f"File already exists in database: {file_path} with scan type {scan_type}", "yellow"))
+        print(colored(f"Scan result saved for: {file_path}", "green"))
+        
+    except sqlite3.Error as e:
+        print(colored(f"Database error while saving scan result: {e}", "red"))
+        print(colored(f"Error details: {str(e)}", "red"))
+        if conn:
+            conn.rollback()
+        raise
+    except ValueError as e:
+        print(colored(f"Invalid data error: {e}", "red"))
+        raise
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def extract_text_from_file(file_path, scan_type):
     """Extract text from various file types."""
@@ -218,14 +308,17 @@ def chunk_text(text, max_length=400):
             print(colored(f"Fallback chunking failed: {e}", "red"))
             return [text[:max_length]]
 
-def detect_pii(text):
+def detect_pii(text, scan_type="full"):
     """Detect PII in text using GLiNER model."""
     try:
         if not gliner_model:
             return []
 
+        # Use full label set for full scans, basic set for lite scans
+        labels_to_use = PII_LABELS_FULL if scan_type == "full" else PII_LABELS
+        
         # Process text with GLiNER
-        entities = gliner_model.predict_entities(text, PII_LABELS)
+        entities = gliner_model.predict_entities(text, labels_to_use)
         
         # Convert entities to standard format
         formatted_entities = []
@@ -255,7 +348,7 @@ def scan_file_for_pii(file_path, scan_type):
         print(colored(f"Processing chunks for file: {file_path} ({scan_type})", "green"))
         for i, chunk in enumerate(chunks):
             print(colored(f"Chunk {i + 1}: {chunk[:50]}...", "yellow"))
-            pii_entities = detect_pii(chunk)
+            pii_entities = detect_pii(chunk, scan_type)
             if pii_entities:
                 all_pii_entities.extend(pii_entities)
 
@@ -270,30 +363,33 @@ def scan_file_for_pii(file_path, scan_type):
 
 def process_file(file_path, scan_type):
     """Process a single file for PII scanning."""
+    print(colored(f"\nProcessing file: {file_path}", "cyan"))
+    
     file_extension = os.path.splitext(file_path)[1].lower()
     if file_extension not in ALLOWED_FILE_TYPES:
+        print(colored(f"Skipping unsupported file type: {file_extension}", "yellow"))
         return
 
     file_size = os.path.getsize(file_path)
     file_modified = datetime.fromtimestamp(os.path.getmtime(file_path), tz=timezone.utc).isoformat()
+    
+    print(colored("Calculating checksum...", "cyan"))
     file_checksum = calculate_checksum(file_path, scan_type)
 
     if file_checksum is None:
         print(colored(f"Skipping {file_path} due to checksum error.", "red"))
         return
 
+    print(colored(f"Checksum: {file_checksum}", "cyan"))
+
     if is_file_scanned(file_path, file_checksum, scan_type):
         print(colored(f"Skipping already scanned file: {file_path} ({scan_type})", "yellow"))
         return
 
-    print(colored(f"Scanning file: {file_path} ({scan_type})", "cyan"))
+    print(colored(f"Scanning file for PII: {file_path} ({scan_type})", "cyan"))
     pii_entities = scan_file_for_pii(file_path, scan_type)
 
-    if pii_entities:
-        print(colored(f"Found PII in {file_path} ({scan_type}): {pii_entities}", "red"))
-    else:
-        print(colored(f"No PII found in {file_path} ({scan_type})", "green"))
-
+    print(colored("Saving results to database...", "cyan"))
     save_scan_result(file_path, pii_entities, file_size, file_modified, file_checksum, scan_type)
 
 def scan_directory(directory, scan_type):
@@ -303,12 +399,45 @@ def scan_directory(directory, scan_type):
             file_path = os.path.join(root, file)
             process_file(file_path, scan_type)
 
+# Add a function to verify database
+def verify_database():
+    """Verify database exists and is properly initialized."""
+    conn = None
+    try:
+        if not os.path.exists(DB_FILE):
+            print(colored(f"Database file not found at: {DB_FILE}", "yellow"))
+            init_db()
+            return
+            
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # Check if table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='scan_history'
+        """)
+        
+        if not cursor.fetchone():
+            print(colored("Database exists but missing required table.", "yellow"))
+            if conn:
+                conn.close()
+            init_db()
+        else:
+            print(colored("Database verified successfully.", "green"))
+            
+    except sqlite3.Error as e:
+        print(colored(f"Database verification error: {e}", "red"))
+        sys.exit(EXIT_DB_ERROR)
+    finally:
+        if conn:
+            conn.close()
+
 if __name__ == "__main__":
     try:
-        # Initialize NLTK
+        verify_database()
         init_nltk()
         
-        # Parse arguments
         parser = argparse.ArgumentParser(description="PII Scanner with Lite and Full Scan Options")
         parser.add_argument("path", help="The directory to scan")
         parser.add_argument("--scan-type", choices=["lite", "full"], default="full",
@@ -324,24 +453,12 @@ if __name__ == "__main__":
             print(colored("Invalid scan type specified", "red"))
             sys.exit(EXIT_INVALID_SCAN_TYPE)
 
-        # Initialize database
-        try:
-            init_db()
-        except Exception as e:
-            print(colored(f"Database initialization error: {e}", "red"))
-            sys.exit(EXIT_DB_ERROR)
-
-        # Initialize tokenizer
-        if tokenizer is None:
-            print(colored("Failed to initialize tokenizer", "red"))
+        # Initialize models
+        if tokenizer is None or gliner_model is None:
+            print(colored("Failed to initialize required models", "red"))
             sys.exit(EXIT_TOKENIZER_INIT_ERROR)
 
-        # Initialize GLiNER model
-        if gliner_model is None:
-            print(colored("Failed to initialize GLiNER model", "red"))
-            sys.exit(EXIT_GLINER_INIT_ERROR)
-
-        # Scan directory
+        # Scan directory using process_file
         pii_found = False
         for root, _, files in os.walk(args.path):
             for file in files:
@@ -350,9 +467,23 @@ if __name__ == "__main__":
                     if os.path.splitext(file)[1].lower() not in ALLOWED_FILE_TYPES:
                         continue
                         
-                    pii_entities = scan_file_for_pii(file_path, args.scan_type)
-                    if pii_entities:
+                    # Use process_file instead of scan_file_for_pii directly
+                    process_file(file_path, args.scan_type)
+                    
+                    # Check if PII was found by querying the database
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT pii_entities 
+                        FROM scan_history 
+                        WHERE file_path = ? AND scan_type = ?
+                    """, (file_path, args.scan_type))
+                    
+                    result = cursor.fetchone()
+                    if result and result[0] != '[]':
                         pii_found = True
+                    
+                    conn.close()
                         
                 except FileNotFoundError:
                     print(colored(f"File not found: {file_path}", "red"))
