@@ -1,22 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Antiviruses>
-  <AntivirusInfo Name='PII Scanner' IsPortableSoftware='true' ExecutableFilePath='%SCRIPT_PATH%\pii_scanner.py' CommandLineParameters='%Path% --scan-type full' RegPath='' ServiceName='' ThreatExistsRegEx='PII data potentially exposed' IsParallelScanAvailable='false'>
+  <AntivirusInfo 
+    Name="PII Scanner" 
+    IsPortableSoftware="true" 
+    ExecutableFilePath="C:\Program Files\PII Scanner\pii_scanner.exe" 
+    CommandLineParameters="%Path% --scan-type full" 
+    ThreatExistsRegEx="PII_DETECTED: (.*)" 
+    IsParallelScanAvailable="false">
     <ExitCodes>
-      <ExitCode Type='Success' Description='No PII found'>0</ExitCode>
-      <ExitCode Type='Warning' Description='PII data potentially exposed'>1</ExitCode>
-      <ExitCode Type='Error' Description='File not found or inaccessible'>2</ExitCode>
-      <ExitCode Type='Error' Description='Unsupported file type'>3</ExitCode>
-      <ExitCode Type='Error' Description='Database error'>4</ExitCode>
-      <ExitCode Type='Error' Description='Failed to initialize tokenizer'>5</ExitCode>
-      <ExitCode Type='Error' Description='Failed to initialize GLiNER model'>6</ExitCode>
-      <ExitCode Type='Error' Description='NLTK initialization error'>7</ExitCode>
-      <ExitCode Type='Error' Description='File checksum calculation error'>8</ExitCode>
-      <ExitCode Type='Error' Description='Text extraction error'>9</ExitCode>
-      <ExitCode Type='Error' Description='Text chunking error'>10</ExitCode>
-      <ExitCode Type='Error' Description='PII detection error'>11</ExitCode>
-      <ExitCode Type='Error' Description='Invalid scan type specified'>12</ExitCode>
-      <ExitCode Type='Error' Description='Missing file path argument'>13</ExitCode>
-      <ExitCode Type='Error' Description='General exception during scan process'>99</ExitCode>
+      <ExitCode Type="Success" Description="No PII found">0</ExitCode>
+      <ExitCode Type="Warning" Description="PII data found">1</ExitCode>
+      <ExitCode Type="Error" Description="File not found">2</ExitCode>
+      <ExitCode Type="Error" Description="Unsupported file">3</ExitCode>
+      <ExitCode Type="Error" Description="Database error">4</ExitCode>
+      <ExitCode Type="Error" Description="Model initialization failed">5</ExitCode>
     </ExitCodes>
   </AntivirusInfo>
 </Antiviruses> 

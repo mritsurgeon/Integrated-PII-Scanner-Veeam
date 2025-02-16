@@ -15,9 +15,39 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 from tqdm import tqdm
 import argparse
 import torch
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Configure logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_FILE = os.getenv("LOG_FILE", os.path.join(os.path.dirname(__file__), "pii_scanner.log"))
+
+# Configure logging handlers
+handlers = [logging.StreamHandler(sys.stdout)]  # Always log to console
+
+# Add rotating file handler
+try:
+    handlers.append(
+        RotatingFileHandler(
+            LOG_FILE,
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5
+        )
+    )
+except Exception as e:
+    print(f"Warning: Could not set up log file at {LOG_FILE}: {e}")
+    print("Continuing with console logging only")
+
+# Configure logging with handlers
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL.upper()),
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=handlers
+)
+logger = logging.getLogger(__name__)
 
 # Configuration - Pull from environment variables or use defaults
 DB_FILE = os.path.abspath(os.getenv("DB_FILE", "pii_scan_history.db"))
@@ -67,32 +97,32 @@ def init_nltk():
     """Initialize NLTK resources."""
     try:
         nltk.data.find('tokenizers/punkt_tab/english')
-        print(colored("NLTK punkt_tab already installed.", "green"))
+        logger.info("NLTK punkt_tab already installed.")
     except LookupError:
         try:
-            print(colored("Downloading NLTK punkt_tab...", "yellow"))
+            logger.warning("Downloading NLTK punkt_tab...")
             nltk.download('punkt_tab')
             nltk.data.find('tokenizers/punkt_tab/english')
-            print(colored("NLTK punkt_tab downloaded successfully.", "green"))
+            logger.info("NLTK punkt_tab downloaded successfully.")
         except Exception as e:
-            print(colored(f"Failed to initialize NLTK: {e}", "red"))
+            logger.error(f"Failed to initialize NLTK: {e}")
             sys.exit(EXIT_NLTK_INIT_ERROR)
 
 # Initialize tokenizer
 try:
     tokenizer = RobertaTokenizer.from_pretrained(MODEL_NAME)
     tokenizer.add_prefix_space = True
-    print(colored(f"Tokenizer '{MODEL_NAME}' initialized successfully.", "green"))
+    logger.info(f"Tokenizer '{MODEL_NAME}' initialized successfully.")
 except Exception as e:
-    print(colored(f"Error initializing tokenizer: {e}", "red"))
+    logger.error(f"Error initializing tokenizer: {e}")
     tokenizer = None
 
 # Initialize GLiNER model
 try:
     gliner_model = GLiNER.from_pretrained(PII_MODEL_NAME)
-    print(colored(f"GLiNER model '{PII_MODEL_NAME}' initialized successfully.", "green"))
+    logger.info(f"GLiNER model '{PII_MODEL_NAME}' initialized successfully.")
 except Exception as e:
-    print(colored(f"Error initializing GLiNER model: {e}", "red"))
+    logger.error(f"Error initializing GLiNER model: {e}")
     gliner_model = None
 
 def init_db():
@@ -127,11 +157,11 @@ def init_db():
         """)
         
         conn.commit()
-        print(colored("Database initialized successfully at: " + DB_FILE, "green"))
+        logger.info("Database initialized successfully at: " + DB_FILE)
         
     except sqlite3.Error as e:
-        print(colored(f"Database initialization error: {e}", "red"))
-        print(colored(f"Error details: {str(e)}", "red"))
+        logger.error(f"Database initialization error: {e}")
+        logger.error(f"Error details: {str(e)}")
         if conn:
             conn.rollback()
         sys.exit(EXIT_DB_ERROR)
@@ -155,37 +185,31 @@ def calculate_checksum(file_path, scan_type):
                     hasher.update(chunk)
         return hasher.hexdigest()
     except Exception as e:
-        print(colored(f"Error calculating checksum for {file_path}: {e}", "red"))
+        logger.error(f"Error calculating checksum for {file_path}: {e}")
         return None
 
 def is_file_scanned(file_path, checksum, scan_type):
-    """Check if file has been scanned with improved error handling."""
+    """Check if file has been scanned and return PII entities."""
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        
-        # First check by checksum only
         cursor.execute("""
-            SELECT file_path, scan_time 
-            FROM scan_history
-            WHERE file_checksum = ? AND scan_type = ?
-        """, (checksum, scan_type))
-        
+            SELECT pii_entities FROM scan_history
+            WHERE file_path = ? AND file_checksum = ? AND scan_type = ?
+        """, (file_path, checksum, scan_type))
         result = cursor.fetchone()
-        
         if result:
-            original_path, last_scan = result
-            print(colored(f"File content already scanned on {last_scan}", "yellow"))
-            print(colored(f"Original file: {original_path}", "yellow"))
-            print(colored(f"Current file: {file_path}", "yellow"))
-            return True
-            
-        return False
-        
+            pii_entities_str = result[0]
+            if pii_entities_str:
+                return True, eval(pii_entities_str)  # Returns True and the PII entities
+            else:
+                return True, []  # Already scanned, no PII found
+        else:
+            return False, None  # Not scanned yet
     except sqlite3.Error as e:
-        print(colored(f"Database error while checking scan history: {e}", "red"))
-        raise
+        logger.error(f"Database error checking if file is scanned: {e}")
+        return False, None  # Treat as not scanned
     finally:
         if conn:
             conn.close()
@@ -209,10 +233,10 @@ def save_scan_result(file_path, pii_entities, file_size, file_modified, file_che
             raise ValueError("file_checksum cannot be None")
             
         # Print debug info
-        print(colored(f"Saving scan result:", "cyan"))
-        print(colored(f"  Path: {file_path}", "cyan"))
-        print(colored(f"  Checksum: {file_checksum}", "cyan"))
-        print(colored(f"  Scan type: {scan_type}", "cyan"))
+        logger.info("Saving scan result:")
+        logger.info(f"  Path: {file_path}")
+        logger.info(f"  Checksum: {file_checksum}")
+        logger.info(f"  Scan type: {scan_type}")
             
         # Insert or update the scan result
         cursor.execute("""
@@ -222,16 +246,16 @@ def save_scan_result(file_path, pii_entities, file_size, file_modified, file_che
         """, (file_path, now, file_size, file_modified, file_checksum, scan_type, str(pii_entities)))
         
         conn.commit()
-        print(colored(f"Scan result saved for: {file_path}", "green"))
+        logger.info(f"Scan result saved for: {file_path}")
         
     except sqlite3.Error as e:
-        print(colored(f"Database error while saving scan result: {e}", "red"))
-        print(colored(f"Error details: {str(e)}", "red"))
+        logger.error(f"Database error while saving scan result: {e}")
+        logger.error(f"Error details: {str(e)}")
         if conn:
             conn.rollback()
         raise
     except ValueError as e:
-        print(colored(f"Invalid data error: {e}", "red"))
+        logger.error(f"Invalid data error: {e}")
         raise
     finally:
         if conn:
@@ -276,7 +300,7 @@ def extract_text_from_file(file_path, scan_type):
             
         return None
     except Exception as e:
-        print(colored(f"Error extracting text from {file_path}: {e}", "red"))
+        logger.error(f"Error extracting text from {file_path}: {e}")
         return None
 
 def chunk_text(text, max_length=400):
@@ -293,19 +317,19 @@ def chunk_text(text, max_length=400):
             chunk_text = tokenizer.convert_tokens_to_string(chunk_tokens)
             chunks.append(chunk_text)
         
-        print(colored(f"Split text into {len(chunks)} chunks", "blue"))
+        logger.info(f"Split text into {len(chunks)} chunks")
         for i, chunk in enumerate(chunks):
             chunk_tokens = tokenizer.tokenize(chunk)
-            print(colored(f"Chunk {i+1} length: {len(chunk_tokens)} tokens", "cyan"))
+            logger.debug(f"Chunk {i+1} length: {len(chunk_tokens)} tokens")
         
         return chunks
     except Exception as e:
-        print(colored(f"Error chunking text: {e}", "red"))
+        logger.error(f"Error chunking text: {e}")
         try:
             tokens = tokenizer.tokenize(text)
             return [tokenizer.convert_tokens_to_string(tokens[:max_length])]
         except Exception as e:
-            print(colored(f"Fallback chunking failed: {e}", "red"))
+            logger.error(f"Fallback chunking failed: {e}")
             return [text[:max_length]]
 
 def detect_pii(text, scan_type="full"):
@@ -331,7 +355,7 @@ def detect_pii(text, scan_type="full"):
         return formatted_entities
         
     except Exception as e:
-        print(colored(f"Error detecting PII: {e}", "yellow"))
+        logger.warning(f"Error detecting PII: {e}")
         return []
 
 def scan_file_for_pii(file_path, scan_type):
@@ -339,57 +363,75 @@ def scan_file_for_pii(file_path, scan_type):
     try:
         text = extract_text_from_file(file_path, scan_type)
         if not text:
-            print(colored(f"Failed to extract text from {file_path}", "red"))
+            logger.error(f"Failed to extract text from {file_path}")
             return []
 
         chunks = chunk_text(text, MAX_CHUNK_LENGTH)
         all_pii_entities = []
 
-        print(colored(f"Processing chunks for file: {file_path} ({scan_type})", "green"))
+        logger.info(f"Processing chunks for file: {file_path} ({scan_type})")
         for i, chunk in enumerate(chunks):
-            print(colored(f"Chunk {i + 1}: {chunk[:50]}...", "yellow"))
+            logger.debug(f"Processing chunk {i + 1}/{len(chunks)}")
             pii_entities = detect_pii(chunk, scan_type)
             if pii_entities:
                 all_pii_entities.extend(pii_entities)
 
         if all_pii_entities:
-            print(colored(f"Found PII in {file_path} ({scan_type}): {all_pii_entities}", "red"))
-            print("PII data potentially exposed")  # Required for Veeam detection
+            # Get unique labels
+            labels = ", ".join(sorted(set(entity['label'] for entity in all_pii_entities)))
+            
+            # Log detailed message
+            log_message = f"PII data potentially exposed in {file_path} ({scan_type}):"
+            for entity in all_pii_entities:
+                log_message += f"\n  - {entity['label']}: {entity['text']}"
+            logger.warning(log_message)
+            
+            # Print messages for Veeam detection
+            print("PII data potentially exposed")  # For Veeam regex match
+            print(f"PII_DETECTED: {labels}")  # For structured output
             
         return all_pii_entities
     except Exception as e:
-        print(colored(f"Error scanning file {file_path}: {e}", "red"))
+        logger.error(f"Error scanning file {file_path}: {e}")
         sys.exit(EXIT_PII_DETECTION_ERROR)
 
 def process_file(file_path, scan_type):
     """Process a single file for PII scanning."""
-    print(colored(f"\nProcessing file: {file_path}", "cyan"))
+    logger.info(f"\nProcessing file: {file_path}")
     
     file_extension = os.path.splitext(file_path)[1].lower()
     if file_extension not in ALLOWED_FILE_TYPES:
-        print(colored(f"Skipping unsupported file type: {file_extension}", "yellow"))
+        logger.warning(f"Skipping unsupported file type: {file_extension}")
         return
 
     file_size = os.path.getsize(file_path)
     file_modified = datetime.fromtimestamp(os.path.getmtime(file_path), tz=timezone.utc).isoformat()
     
-    print(colored("Calculating checksum...", "cyan"))
+    logger.info("Calculating checksum...")
     file_checksum = calculate_checksum(file_path, scan_type)
 
     if file_checksum is None:
-        print(colored(f"Skipping {file_path} due to checksum error.", "red"))
+        logger.warning(f"Skipping {file_path} due to checksum error.")
         return
 
-    print(colored(f"Checksum: {file_checksum}", "cyan"))
+    logger.info(f"Checksum: {file_checksum}")
 
-    if is_file_scanned(file_path, file_checksum, scan_type):
-        print(colored(f"Skipping already scanned file: {file_path} ({scan_type})", "yellow"))
+    already_scanned, previous_pii_entities = is_file_scanned(file_path, file_checksum, scan_type)
+
+    if already_scanned:
+        if previous_pii_entities:
+            labels = ", ".join(sorted(set(entity['label'] for entity in previous_pii_entities)))
+            logger.warning(f"PII data potentially exposed in previously scanned file: {file_path} ({scan_type}): {labels}")
+            print("PII data potentially exposed")
+            print(f"PII_DETECTED: {labels}")
+        else:
+            logger.info(f"Skipping already scanned file: {file_path} ({scan_type}) - No PII found in previous scan")
         return
 
-    print(colored(f"Scanning file for PII: {file_path} ({scan_type})", "cyan"))
+    logger.info(f"Scanning file for PII: {file_path} ({scan_type})")
     pii_entities = scan_file_for_pii(file_path, scan_type)
 
-    print(colored("Saving results to database...", "cyan"))
+    logger.info("Saving results to database...")
     save_scan_result(file_path, pii_entities, file_size, file_modified, file_checksum, scan_type)
 
 def scan_directory(directory, scan_type):
@@ -405,7 +447,7 @@ def verify_database():
     conn = None
     try:
         if not os.path.exists(DB_FILE):
-            print(colored(f"Database file not found at: {DB_FILE}", "yellow"))
+            logger.warning(f"Database file not found at: {DB_FILE}")
             init_db()
             return
             
@@ -419,15 +461,15 @@ def verify_database():
         """)
         
         if not cursor.fetchone():
-            print(colored("Database exists but missing required table.", "yellow"))
+            logger.warning("Database exists but missing required table.")
             if conn:
                 conn.close()
             init_db()
         else:
-            print(colored("Database verified successfully.", "green"))
+            logger.info("Database verified successfully.")
             
     except sqlite3.Error as e:
-        print(colored(f"Database verification error: {e}", "red"))
+        logger.error(f"Database verification error: {e}")
         sys.exit(EXIT_DB_ERROR)
     finally:
         if conn:
@@ -442,20 +484,25 @@ if __name__ == "__main__":
         parser.add_argument("path", help="The directory to scan")
         parser.add_argument("--scan-type", choices=["lite", "full"], default="full",
                           help="Specify 'lite' for a quick 1MB scan or 'full' for a complete scan (default: full)")
+        parser.add_argument("--verbose", action="store_true", help="Enable verbose logging (DEBUG level)")
 
         args = parser.parse_args()
         
         if not args.path:
-            print(colored("Missing file path argument", "red"))
+            logger.error("Missing file path argument")
             sys.exit(EXIT_MISSING_PATH)
             
         if args.scan_type not in ["lite", "full"]:
-            print(colored("Invalid scan type specified", "red"))
+            logger.error("Invalid scan type specified")
             sys.exit(EXIT_INVALID_SCAN_TYPE)
+
+        if args.verbose:
+            logger.setLevel(logging.DEBUG)
+            logger.debug("Verbose logging enabled")
 
         # Initialize models
         if tokenizer is None or gliner_model is None:
-            print(colored("Failed to initialize required models", "red"))
+            logger.error("Failed to initialize required models")
             sys.exit(EXIT_TOKENIZER_INIT_ERROR)
 
         # Scan directory using process_file
@@ -486,15 +533,15 @@ if __name__ == "__main__":
                     conn.close()
                         
                 except FileNotFoundError:
-                    print(colored(f"File not found: {file_path}", "red"))
+                    logger.error(f"File not found: {file_path}")
                     sys.exit(EXIT_FILE_NOT_FOUND)
                 except Exception as e:
-                    print(colored(f"Error processing file {file_path}: {e}", "red"))
+                    logger.error(f"Error processing file {file_path}: {e}")
                     sys.exit(EXIT_GENERAL_ERROR)
 
-        print(colored("Scanning complete.", "green"))
+        logger.info("Scanning complete.")
         sys.exit(EXIT_PII_FOUND if pii_found else EXIT_SUCCESS)
 
     except Exception as e:
-        print(colored(f"An error occurred: {e}", "red"))
+        logger.error(f"An error occurred: {e}")
         sys.exit(EXIT_GENERAL_ERROR) 
