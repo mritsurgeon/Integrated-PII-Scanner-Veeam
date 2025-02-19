@@ -1,59 +1,102 @@
-import os
+import warnings
 import sys
+import os
+import io
+
+# Disable all warnings (as suggested by GLiNER owner)
+warnings.filterwarnings("ignore")
+
+# Create a more aggressive stdout suppressor
+class SuppressStdoutStderr:
+    def __init__(self):
+        self.null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
+        self.save_fds = [os.dup(1), os.dup(2)]
+
+    def __enter__(self):
+        os.dup2(self.null_fds[0], 1)
+        os.dup2(self.null_fds[1], 2)
+
+    def __exit__(self, *_):
+        os.dup2(self.save_fds[0], 1)
+        os.dup2(self.save_fds[1], 2)
+        for fd in self.null_fds + self.save_fds:
+            os.close(fd)
+
+warnings.filterwarnings("ignore", category=UserWarning)  # General UserWarnings
+warnings.filterwarnings("ignore", module="gliner")  # All GLiNER warnings
+warnings.filterwarnings("ignore", module="transformers")  # All transformers warnings
+warnings.filterwarnings("ignore", message=".*truncate to max_length.*", category=UserWarning)  # Specific truncation warning
+warnings.filterwarnings("ignore", message=".*no maximum length is provided.*", category=UserWarning)  # Another form of the warning
+
+os.environ["ONNXRUNTIME_DISABLE_VERSION_WARNING"] = "1"
+os.environ["TQDM_DISABLE"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+
 import sqlite3
 import hashlib
 from datetime import datetime, timezone
 from docx import Document
 from pptx import Presentation
 from openpyxl import load_workbook
-from transformers import RobertaTokenizer
 from gliner import GLiNER
 from termcolor import colored
 from dotenv import load_dotenv
-import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
-from tqdm import tqdm
 import argparse
-import torch
 import logging
-from logging.handlers import RotatingFileHandler
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Configure logging
+# Add LOG_LEVEL definition
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-LOG_FILE = os.getenv("LOG_FILE", os.path.join(os.path.dirname(__file__), "pii_scanner.log"))
+LOG_FILE = os.path.join(os.environ.get("PROGRAMDATA", ""), "PII Scanner", "pii_scanner.log")
 
-# Configure logging handlers
-handlers = [logging.StreamHandler(sys.stdout)]  # Always log to console
+# Simplify logging setup
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
 
-# Add rotating file handler
-try:
-    handlers.append(
-        RotatingFileHandler(
-            LOG_FILE,
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
-        )
-    )
-except Exception as e:
-    print(f"Warning: Could not set up log file at {LOG_FILE}: {e}")
-    print("Continuing with console logging only")
-
-# Configure logging with handlers
+# Configure logging with handler
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper()),
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=handlers
+    handlers=[handler]
 )
+
 logger = logging.getLogger(__name__)
 
+# Disable tqdm progress bars
+
+
+def get_env_file_path():
+    """Get the path to the .env file based on whether running as exe or script"""
+    if getattr(sys, 'frozen', False):
+        # Running as exe
+        return os.path.join(os.path.dirname(sys.executable), '.env')
+    else:
+        # Running as script
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+
+# Load environment variables from .env file
+env_path = get_env_file_path()
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+    logger.info(f"Loaded configuration from {env_path}")
+else:
+    logger.warning(f"No .env file found at {env_path}, using defaults")
+
+def get_application_path():
+    """Get the base path for the application, works in both script and exe"""
+    if getattr(sys, 'frozen', False):
+        # Running as compiled exe
+        return os.path.dirname(sys.executable)
+    else:
+        # Running as script
+        return os.path.dirname(os.path.abspath(__file__))
+
 # Configuration - Pull from environment variables or use defaults
-DB_FILE = os.path.abspath(os.getenv("DB_FILE", "pii_scan_history.db"))
+DB_FILE = os.getenv("DB_FILE", os.path.join(os.environ.get("PROGRAMDATA", ""),
+                                           "PII Scanner",
+                                           "pii_scan_history.db"))
 ALLOWED_FILE_TYPES = {".doc", ".docx", ".xlsx", ".pptx", ".txt"}
-MODEL_NAME = os.getenv("MODEL_NAME", "roberta-base")
-MAX_CHUNK_LENGTH = int(os.getenv("MAX_CHUNK_LENGTH", "400"))
+MAX_CHUNK_LENGTH = int(os.getenv("MAX_CHUNK_LENGTH", "384"))  # Changed default to 384
 LITE_SCAN_LIMIT = 1024 * 1024  # 1MB limit for lite scan
 PII_MODEL_NAME = os.getenv("PII_MODEL_NAME", "urchade/gliner_multi_pii-v1")
 
@@ -93,75 +136,60 @@ EXIT_INVALID_SCAN_TYPE = 12
 EXIT_MISSING_PATH = 13
 EXIT_GENERAL_ERROR = 99
 
+# Ensure directories exist
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+
 def init_nltk():
     """Initialize NLTK resources."""
-    try:
-        nltk.data.find('tokenizers/punkt_tab/english')
-        logger.info("NLTK punkt_tab already installed.")
-    except LookupError:
-        try:
-            logger.warning("Downloading NLTK punkt_tab...")
-            nltk.download('punkt_tab')
-            nltk.data.find('tokenizers/punkt_tab/english')
-            logger.info("NLTK punkt_tab downloaded successfully.")
-        except Exception as e:
-            logger.error(f"Failed to initialize NLTK: {e}")
-            sys.exit(EXIT_NLTK_INIT_ERROR)
+    logger.info("NLTK initialization skipped - using GLiNER tokenizer")
+    return
 
-# Initialize tokenizer
+# Initialize GLiNER model with proper configuration
 try:
-    tokenizer = RobertaTokenizer.from_pretrained(MODEL_NAME)
-    tokenizer.add_prefix_space = True
-    logger.info(f"Tokenizer '{MODEL_NAME}' initialized successfully.")
-except Exception as e:
-    logger.error(f"Error initializing tokenizer: {e}")
-    tokenizer = None
-
-# Initialize GLiNER model
-try:
-    gliner_model = GLiNER.from_pretrained(PII_MODEL_NAME)
+    model_config = {
+        'max_length': MAX_CHUNK_LENGTH,
+        'padding': 'max_length',
+        'truncation': True,
+        'add_prefix_space': True
+    }
+    
+    gliner_model = GLiNER.from_pretrained(
+        PII_MODEL_NAME,
+        **model_config
+    )
+    
     logger.info(f"GLiNER model '{PII_MODEL_NAME}' initialized successfully.")
 except Exception as e:
     logger.error(f"Error initializing GLiNER model: {e}")
     gliner_model = None
 
 def init_db():
-    """Initialize the SQLite database with proper error handling."""
+    """Initialize the SQLite database."""
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # Drop existing table if it exists
-        cursor.execute("DROP TABLE IF EXISTS scan_history")
-        
-        # Create the scan_history table with proper constraints
+        # Create the scan_history table
         cursor.execute("""
-            CREATE TABLE scan_history (
+            CREATE TABLE IF NOT EXISTS scan_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_path TEXT NOT NULL,
                 scan_time TEXT NOT NULL,
                 file_size INTEGER,
                 file_modified TEXT,
-                file_checksum TEXT NOT NULL,
+                file_checksum TEXT,
                 scan_type TEXT CHECK(scan_type IN ('lite', 'full')),
                 pii_entities TEXT,
-                UNIQUE(file_checksum, scan_type)
+                UNIQUE(file_path, scan_type)
             )
         """)
-        
-        # Add index on checksum for faster lookups
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_checksum_type 
-            ON scan_history(file_checksum, scan_type)
-        """)
-        
         conn.commit()
-        logger.info("Database initialized successfully at: " + DB_FILE)
+        logger.debug(f"Database initialized successfully at: {DB_FILE}")  # Changed to debug level
         
     except sqlite3.Error as e:
-        logger.error(f"Database initialization error: {e}")
-        logger.error(f"Error details: {str(e)}")
+        logger.warning(f"Database initialization error: {e}")  # Changed to warning level
         if conn:
             conn.rollback()
         sys.exit(EXIT_DB_ERROR)
@@ -278,14 +306,17 @@ def extract_text_from_file(file_path, scan_type):
             return text
             
         elif file_path.endswith(".xlsx"):
-            workbook = load_workbook(file_path)
-            text = ""
-            for sheet in workbook:
-                for row in sheet.iter_rows():
-                    text += " ".join([str(cell.value) if cell.value is not None else "" for cell in row]) + "\n"
-                    if scan_type == "lite" and len(text.encode('utf-8')) > LITE_SCAN_LIMIT:
-                        return text[:LITE_SCAN_LIMIT].decode('utf-8', 'ignore')
-            return text
+            # Suppress openpyxl warnings during workbook load
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                workbook = load_workbook(file_path)
+                text = ""
+                for sheet in workbook:
+                    for row in sheet.iter_rows():
+                        text += " ".join([str(cell.value) if cell.value is not None else "" for cell in row]) + "\n"
+                        if scan_type == "lite" and len(text.encode('utf-8')) > LITE_SCAN_LIMIT:
+                            return text[:LITE_SCAN_LIMIT].decode('utf-8', 'ignore')
+                return text
             
         elif file_path.endswith(".pptx"):
             presentation = Presentation(file_path)
@@ -303,34 +334,43 @@ def extract_text_from_file(file_path, scan_type):
         logger.error(f"Error extracting text from {file_path}: {e}")
         return None
 
-def chunk_text(text, max_length=400):
-    """Split text into chunks using RoBERTa tokenizer."""
+def chunk_text(text, max_length=MAX_CHUNK_LENGTH):
+    """Split text into chunks using GLiNER's words_splitter."""
     try:
         if not text:
             return []
         
-        tokens = tokenizer.tokenize(text)
+        # Get all tokens at once, extract only the token text from tuples
+        tokens = [t[0] for t in gliner_model.data_processor.words_splitter(text)]
+        
+        # Initialize variables for chunking
         chunks = []
+        current_chunk = []
+        current_length = 0
         
-        for i in range(0, len(tokens), max_length):
-            chunk_tokens = tokens[i:i + max_length]
-            chunk_text = tokenizer.convert_tokens_to_string(chunk_tokens)
-            chunks.append(chunk_text)
+        # Process tokens into chunks
+        for token in tokens:
+            if current_length + 1 > max_length - 2:  # Account for special tokens
+                # Save current chunk
+                if current_chunk:
+                    chunks.append(" ".join(current_chunk))
+                # Start new chunk
+                current_chunk = [token]
+                current_length = 1
+            else:
+                current_chunk.append(token)
+                current_length += 1
         
-        logger.info(f"Split text into {len(chunks)} chunks")
-        for i, chunk in enumerate(chunks):
-            chunk_tokens = tokenizer.tokenize(chunk)
-            logger.debug(f"Chunk {i+1} length: {len(chunk_tokens)} tokens")
+        # Add the last chunk if not empty
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
         
+        logger.debug(f"Split text into {len(chunks)} chunks")
         return chunks
+        
     except Exception as e:
-        logger.error(f"Error chunking text: {e}")
-        try:
-            tokens = tokenizer.tokenize(text)
-            return [tokenizer.convert_tokens_to_string(tokens[:max_length])]
-        except Exception as e:
-            logger.error(f"Fallback chunking failed: {e}")
-            return [text[:max_length]]
+        logger.warning(f"Error chunking text: {e}")
+        return []
 
 def detect_pii(text, scan_type="full"):
     """Detect PII in text using GLiNER model."""
@@ -338,13 +378,12 @@ def detect_pii(text, scan_type="full"):
         if not gliner_model:
             return []
 
-        # Use full label set for full scans, basic set for lite scans
         labels_to_use = PII_LABELS_FULL if scan_type == "full" else PII_LABELS
         
-        # Process text with GLiNER
-        entities = gliner_model.predict_entities(text, labels_to_use)
+        # Use the new suppressor
+        with SuppressStdoutStderr():
+            entities = gliner_model.predict_entities(text, labels_to_use)
         
-        # Convert entities to standard format
         formatted_entities = []
         for entity in entities:
             formatted_entities.append({
@@ -447,7 +486,7 @@ def verify_database():
     conn = None
     try:
         if not os.path.exists(DB_FILE):
-            logger.warning(f"Database file not found at: {DB_FILE}")
+            logger.debug(f"Database file not found at: {DB_FILE}")  # Changed to debug level
             init_db()
             return
             
@@ -461,19 +500,26 @@ def verify_database():
         """)
         
         if not cursor.fetchone():
-            logger.warning("Database exists but missing required table.")
+            logger.debug("Database exists but missing required table.")  # Changed to debug level
             if conn:
                 conn.close()
             init_db()
         else:
-            logger.info("Database verified successfully.")
+            logger.debug("Database verified successfully.")  # Changed to debug level
             
     except sqlite3.Error as e:
-        logger.error(f"Database verification error: {e}")
+        logger.warning(f"Database verification error: {e}")  # Changed to warning level
         sys.exit(EXIT_DB_ERROR)
     finally:
         if conn:
             conn.close()
+
+def custom_formatwarning(message, category, filename, lineno, line=None):
+    """Custom format for UserWarning, logs it as INFO."""
+    logger.info(f"{filename}:{lineno}: {category.__name__}: {message}")
+    return ''  # Suppress the original warning
+
+warnings.formatwarning = custom_formatwarning
 
 if __name__ == "__main__":
     try:
@@ -501,9 +547,9 @@ if __name__ == "__main__":
             logger.debug("Verbose logging enabled")
 
         # Initialize models
-        if tokenizer is None or gliner_model is None:
+        if gliner_model is None:
             logger.error("Failed to initialize required models")
-            sys.exit(EXIT_TOKENIZER_INIT_ERROR)
+            sys.exit(EXIT_GLINER_INIT_ERROR)
 
         # Scan directory using process_file
         pii_found = False

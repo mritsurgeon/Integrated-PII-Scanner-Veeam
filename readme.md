@@ -1,149 +1,100 @@
 # PII Scanner for Veeam
 
-A Python-based PII (Personally Identifiable Information) scanner that integrates with Veeam backup solutions. This tool scans various document types for potential PII data exposure using the GLiNER model for accurate detection.
+A Python-based PII scanner that integrates with Veeam backup solutions, using GLiNER for accurate PII detection.
 
-## Overview
+## Key Features
 
-The PII Scanner is designed to:
-- Detect sensitive information in backup documents
-- Integrate seamlessly with Veeam backup solutions
-- Support multiple document formats
-- Provide both quick and thorough scanning options
-- Track scan history and avoid duplicate scans
-- Prevent rescanning identical content using checksums
+- **Two Scan Modes**:
+  - `full`: Complete document analysis (recommended for detailed PII discovery)
+  - `lite`: Quick 1MB scan (ideal for initial file classification)
+- **Efficient Processing**:
+  - Checksum-based duplicate detection
+  - Configurable chunk sizes
+  - SQLite database for scan history
+- **Veeam Integration**:
+  - Compatible with Veeam's antivirus scanning interface
+  - Supports continuous scanning option
 
-## Features
+## Configuration
 
-### Scan Types
-- **Full Scan**: Complete document analysis with extended PII detection
-- **Lite Scan**: Quick 1MB scan for large files with basic PII detection
-
-### Supported File Types
-- Microsoft Word (.doc, .docx)
-- Microsoft Excel (.xlsx)
-- Microsoft PowerPoint (.pptx)
-- Text files (.txt)
-
-### PII Detection Capabilities
-Using the GLiNER model, detects:
-- Person names
-- Email addresses
-- Phone numbers
-- Physical addresses
-- Social Security Numbers
-- Credit card numbers
-- Passport numbers
-- Driver licenses
-- Company names
-- And many more (see configuration)
-
-### Database Features
-- SQLite database for scan history
-- Checksum-based duplicate detection
-- Scan results tracking
-- Support for multiple scan types per file
-
-## Installation & Setup
-
-### Requirements
-- Python 3.8 or higher
-- pip (Python package installer)
-- Internet connection for initial model download
-- Sufficient disk space for models and database
-
-### Python Installation
+### Environment Variables (.env)
 ```bash
-# Clone repository
-git clone https://github.com/mritsurgeon/Integrated-PII-Scanner-Veeam.git
-cd Integrated-PII-Scanner-Veeam
+# Database
+DB_FILE=C:\ProgramData\PII Scanner\pii_scan_history.db
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-.\venv\Scripts\activate   # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Configuration
-1. Copy example environment file:
-```bash
-cp .env.example .env
-```
-
-2. Configure environment variables in `.env`:
-```bash
-# Database configuration
-DB_FILE=pii_scan_history.db
-
-# Model configuration
-MODEL_NAME=roberta-base
+# GLiNER Model
 PII_MODEL_NAME=urchade/gliner_multi_pii-v1
-MAX_CHUNK_LENGTH=400
+MAX_CHUNK_LENGTH=384
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=C:\ProgramData\PII Scanner\pii_scanner.log
 
 # Basic PII Labels (for lite scans)
-PII_LABELS=person,organization,phone number,address,passport number,email,credit card number,social security number
-
+PII_LABELS=person,organization,phone number,address,passport number,email,credit card number,social 
+security number
 # Extended PII Labels (for full scans)
 PII_LABELS_FULL=person,organization,phone number,address,passport number,email,credit card number,social security number,health insurance id number,date of birth,mobile phone number,bank account number,medication,cpf,driver's license number,tax identification number,medical condition,identity card number,national id number,ip address,email address,iban,credit card expiration date,username,health insurance number,registration number,student id number,insurance number,flight number,landline phone number,blood type,cvv,reservation number,digital signature,social media handle,license plate number,cnpj,postal code,passport_number,serial number,vehicle registration number,credit card brand,fax number,visa number,insurance company,identity document number,transaction number,national health insurance number,cvc,birth certificate number,train ticket number,passport expiration date,social_security_number
 ```
 
-## Veeam Integration
+## Installation
 
-### Executable Creation
+### Create Executable
 ```bash
-# Install PyInstaller
-pip install pyinstaller
-
-# Create executable (with embedded config)
-pyinstaller --onefile --add-data ".env:." pii_scanner.py
-
-# OR for external configuration (recommended)
-pyinstaller --onefile pii_scanner.py
+pyinstaller --onefile --uac-admin --add-data ".env;." --hidden-import=sqlite3 pii_scanner.py
 ```
 
-### Installation Steps
-1. Create directories:
-```bash
+### Setup Script (setup.bat)
+```batch
+@echo off
 mkdir "C:\Program Files\PII Scanner"
 mkdir "C:\ProgramData\PII Scanner"
+copy "dist\pii_scanner.exe" "C:\Program Files\PII Scanner\"
+copy ".env" "C:\Program Files\PII Scanner\"
+icacls "C:\ProgramData\PII Scanner" /grant "Users":(OI)(CI)F
 ```
 
-2. Copy files:
-```bash
-copy dist\pii_scanner.exe "C:\Program Files\PII Scanner\"
-copy .env "C:\Program Files\PII Scanner\"
-copy pii_scanner.xml "C:\Program Files\Veeam\Backup and Replication\<version>\AntivirusConf\"
-```
-
-3. Update `.env` for production:
-```bash
-DB_FILE=C:\ProgramData\PII Scanner\pii_scan_history.db
-```
-
-### XML Configuration
+### Veeam Integration (pii_scanner.xml)
 ```xml
-<?xml version="1.0" encoding="utf-8"?>
-<Antiviruses>
-  <AntivirusInfo 
-    Name="PII Scanner" 
-    IsPortableSoftware="true" 
-    ExecutableFilePath="C:\Program Files\PII Scanner\pii_scanner.exe" 
-    CommandLineParameters="%Path% --scan-type full" 
-    ThreatExistsRegEx="PII data potentially exposed" 
-    IsParallelScanAvailable="false">
-    <ExitCodes>
-      <ExitCode Type="Success" Description="No PII found">0</ExitCode>
-      <ExitCode Type="Warning" Description="PII data found">1</ExitCode>
-      <ExitCode Type="Error" Description="File not found">2</ExitCode>
-      <ExitCode Type="Error" Description="Unsupported file">3</ExitCode>
-      <ExitCode Type="Error" Description="Database error">4</ExitCode>
-      <ExitCode Type="Error" Description="Model initialization failed">5</ExitCode>
-    </ExitCodes>
-  </AntivirusInfo>
-</Antiviruses>
+<AntivirusInfo 
+  Name="PII Scanner" 
+  IsPortableSoftware="true" 
+  ExecutableFilePath="C:\Program Files\PII Scanner\pii_scanner.exe" 
+  CommandLineParameters="%Path% --scan-type full" 
+  ThreatExistsRegEx="PII_DETECTED: (.*)" 
+  IsParallelScanAvailable="false">
+  <!-- Add ContinueScanningAfterThreat="true" for scanning all files -->
+</AntivirusInfo>
 ```
+
+## Usage Notes
+
+### Scan Types
+- **Full Scan**: Use when you need to discover all PII instances
+  ```bash
+  pii_scanner.exe path/to/scan --scan-type full
+  ```
+- **Lite Scan**: Use for quick file classification
+  ```bash
+  pii_scanner.exe path/to/scan --scan-type lite
+  ```
+
+### Veeam Integration Tips
+1. For complete PII discovery:
+   - Use `full` scan type
+   - Enable "Continue scanning all remaining files after the first occurrence"
+   - Expect longer scan times but comprehensive results
+
+2. For quick file classification:
+   - Use `lite` scan type
+   - Faster processing
+   - Identifies files containing PII without detailed analysis
+
+### Performance Considerations
+- Lite scans process only the first 1MB of files
+- Full scans process entire files
+- Database caching prevents redundant scans
+- Checksum-based detection avoids duplicate processing
 
 ## Technical Reference
 
