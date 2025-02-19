@@ -145,30 +145,6 @@ CREATE TABLE scan_history (
 );
 ```
 
-### Troubleshooting
-
-#### Common Issues
-1. **Model Download Failures**
-   - Check internet connectivity
-   - Verify disk space
-   - Ensure write permissions
-
-2. **Database Errors**
-   - Check write permissions
-   - Verify SQLite functionality
-   - Ensure sufficient disk space
-
-3. **File Access Issues**
-   - Verify file permissions
-   - Check file paths
-   - Confirm file format support
-
-#### Console Output Colors
-- **Green**: Success messages
-- **Yellow**: Warnings and progress
-- **Red**: Errors and PII detection
-- **Blue/Cyan**: Processing information
-
 ## Contributing
 
 1. Fork the repository
@@ -191,5 +167,5 @@ For questions or support, please contact:
 
 - GLiNER model by urchade for PII detection
 - Veeam Software for integration capabilities
-- RoBERTa tokenizer for text processing
+
 
