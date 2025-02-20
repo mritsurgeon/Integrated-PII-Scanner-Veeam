@@ -90,6 +90,14 @@ icacls "C:\ProgramData\PII Scanner" /grant "Users":(OI)(CI)F
    - Faster processing
    - Identifies files containing PII without detailed analysis
 
+### Veeam Usage Screenshots
+
+<img width="1159" alt="image" src="https://github.com/user-attachments/assets/6d0e130e-291b-4107-a6b6-4a3c955545fb" />
+
+<img width="607" alt="image" src="https://github.com/user-attachments/assets/7957f4f1-7903-452e-be15-51f1a7abc608" />
+
+<img width="1215" alt="image" src="https://github.com/user-attachments/assets/f619c99d-aba9-4ac7-b648-2651d9fc4bdd" />
+
 ### Performance Considerations
 - Lite scans process only the first 1MB of files
 - Full scans process entire files
