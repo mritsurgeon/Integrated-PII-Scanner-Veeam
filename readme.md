@@ -227,4 +227,7 @@ columns:
 - scan_type: 'lite' or 'full'
 - pii_entities: Detected PII data
 ```
+### Screenshots 
+
+<img width="1501" alt="image" src="https://github.com/user-attachments/assets/ae74a474-f192-4f00-9722-f2318e3ea231" />
 
