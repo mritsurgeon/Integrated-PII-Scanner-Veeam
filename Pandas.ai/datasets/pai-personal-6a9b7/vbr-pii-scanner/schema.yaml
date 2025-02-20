@@ -1,0 +1,22 @@
+name: vbr-pii-scanner
+source:
+  type: parquet
+  path: data.parquet
+description: PII Scanner for Veeam
+columns:
+- name: id
+  type: integer
+- name: file_path
+  type: string
+- name: scan_time
+  type: string
+- name: file_size
+  type: integer
+- name: file_modified
+  type: string
+- name: file_checksum
+  type: string
+- name: scan_type
+  type: string
+- name: pii_entities
+  type: string

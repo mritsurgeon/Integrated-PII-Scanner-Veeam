@@ -169,3 +169,62 @@ For questions or support, please contact:
 - Veeam Software for integration capabilities
 
 
+## Data Visualization with PandaAI
+
+The PII Scanner includes integration with PandaAI for visualizing scan results and analyzing PII detection patterns.
+
+### Setup PandaAI Integration
+
+1. **Install Requirements**:
+```bash
+pip install -r Pandas.ai/requirements.txt
+```
+
+2. **Get PandaAI API Key**:
+   - Sign up at [PandaAI](https://pandas.ai)
+   - Navigate to your account settings
+   - Generate a new API key
+   - Replace the API key in `Pandas.ai/datacollector.py`:
+     ```python
+     pai.api_key.set("YOUR-API-KEY-HERE")
+     ```
+
+3. **Configure Database Path**:
+   - Update the db_path in `Pandas.ai/datacollector.py` to point to your SQLite database:
+     ```python
+     db_path = os.path.join('path', 'to', 'pii_scan_history.db')
+     ```
+
+### Using PandaAI Visualization
+
+1. **Run Data Collection**:
+```bash
+cd Pandas.ai
+python datacollector.py
+```
+
+2. **Access Visualizations**:
+   - Log into your PandaAI dashboard
+   - Navigate to the "vbr-pii-scanner" dataset
+   - View PII detection patterns and statistics
+
+### Available Data Points
+- Scan history timeline
+- PII type distribution
+- File type analysis
+- Detection patterns
+- Scan performance metrics
+
+### Schema
+```yaml
+columns:
+- id: Unique scan identifier
+- file_path: Path to scanned file
+- scan_time: Timestamp of scan
+- file_size: Size of scanned file
+- file_modified: Last modification time
+- file_checksum: File hash
+- scan_type: 'lite' or 'full'
+- pii_entities: Detected PII data
+```
+
