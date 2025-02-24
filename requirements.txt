@@ -4,8 +4,6 @@ transformers>=4.48.3
 nltk>=3.9.1
 python-dotenv>=1.0.1
 termcolor>=2.5.0
-sentencepiece>=0.2.1  # Required for GLiNER tokenization
-gliner>=0.2.16
-pyinstaller>=6.12.0
-torch>=2.6.0
-huggingface-hub>=0.28.1
+sentencepiece==0.1.99  # Use a compatible version
+gliner>=0.1.0
+pyinstaller
