@@ -55,31 +55,12 @@ Section "Install"
     ; Create installation directories
     CreateDirectory "$INSTDIR"
     CreateDirectory "$LOCALAPPDATA\PII Scanner"
-    CreateDirectory "$INSTDIR\model_download"
 
     ; Copy executable and configuration
     SetOutPath "$INSTDIR"
     File "dist\pii_scanner.exe"
     File ".env.example"
     File "pii_scanner.xml"
-
-    ; Create Python script to download model
-    FileOpen $0 "$INSTDIR\model_download\download_model.py" w
-    FileWrite $0 'from transformers import AutoTokenizer, AutoModelForTokenClassification$\r$\n'
-    FileWrite $0 'import sys$\r$\n'
-    FileWrite $0 'model_name = sys.argv[1]$\r$\n'
-    FileWrite $0 'print(f"Downloading model {model_name}...")$\r$\n'
-    FileWrite $0 'tokenizer = AutoTokenizer.from_pretrained(model_name)$\r$\n'
-    FileWrite $0 'model = AutoModelForTokenClassification.from_pretrained(model_name)$\r$\n'
-    FileWrite $0 'print("Model downloaded successfully!")$\r$\n'
-    FileClose $0
-
-    ; Create batch script to run model download
-    FileOpen $0 "$INSTDIR\model_download\download_model.bat" w
-    FileWrite $0 '@echo off$\r$\n'
-    FileWrite $0 'python download_model.py "$ModelSelection"$\r$\n'
-    FileWrite $0 'pause$\r$\n'
-    FileClose $0
 
     ; Create .env file with selected model
     FileOpen $0 "$INSTDIR\.env" w
@@ -104,10 +85,7 @@ Section "Install"
 
     ; Download the selected model
     MessageBox MB_OK "The installer will now download the selected GLiNER model. This may take a few minutes."
-    ExecWait 'cmd.exe /c "$INSTDIR\model_download\download_model.bat"'
-
-    ; Cleanup model download files
-    RMDir /r "$INSTDIR\model_download"
+    ExecWait 'python -c "from gliner import GLiNER; model = GLiNER.from_pretrained($\"$ModelSelection$\")"'
 
     ; Notify user about completion
     MessageBox MB_OK "Installation complete. The model has been downloaded and configured."
