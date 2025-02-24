@@ -39,12 +39,21 @@ jobs:
         run: |
           choco install nsis -y
 
-      # Step 6: Create the NSIS installer
+      # Step 6: Download and install AccessControl plugin
+      - name: Install AccessControl plugin
+        shell: pwsh
+        run: |
+          $pluginUrl = "https://nsis.sourceforge.io/mediawiki/images/4/4a/AccessControl.zip"
+          $outputPath = "$env:RUNNER_TEMP\AccessControl.zip"
+          Invoke-WebRequest -Uri $pluginUrl -OutFile $outputPath
+          Expand-Archive -Path $outputPath -DestinationPath "$env:ProgramFiles\NSIS\Plugins\x86-unicode"
+
+      # Step 7: Create the NSIS installer
       - name: Create NSIS installer
         run: |
           makensis pii_scanner_installer.nsi
 
-      # Step 7: Upload the installer as a build artifact
+      # Step 8: Upload the installer as a build artifact
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
