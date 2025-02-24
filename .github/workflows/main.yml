@@ -3,57 +3,41 @@ name: Build and Package PII Scanner
 on:
   push:
     branches:
-      - main  # Trigger on pushes to the main branch
+      - main
   pull_request:
     branches:
-      - main  # Trigger on pull requests to the main branch
+      - main
 
 jobs:
   build:
-    runs-on: windows-latest  # Use a Windows runner
+    runs-on: windows-latest
 
     steps:
-      # Step 1: Checkout the code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Use the Python version you need
+          python-version: '3.11'
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Step 4: Run PyInstaller to build the executable
       - name: Build executable with PyInstaller
         run: |
           pyinstaller --onefile --uac-admin --add-data ".env.example;." --add-data "pii_scanner.xml;." --hidden-import=sqlite3 pii_scanner.py
 
-      # Step 5: Install NSIS
       - name: Install NSIS
         run: |
           choco install nsis -y
 
-      # Step 6: Download and install AccessControl plugin
-      - name: Install AccessControl plugin
-        shell: pwsh
-        run: |
-          $pluginUrl = "https://nsis.sourceforge.io/mediawiki/images/4/4a/AccessControl.zip"
-          $outputPath = "$env:RUNNER_TEMP\AccessControl.zip"
-          Invoke-WebRequest -Uri $pluginUrl -OutFile $outputPath
-          Expand-Archive -Path $outputPath -DestinationPath "$env:ProgramFiles\NSIS\Plugins\x86-unicode"
-
-      # Step 7: Create the NSIS installer
       - name: Create NSIS installer
         run: |
           makensis pii_scanner_installer.nsi
 
-      # Step 8: Upload the installer as a build artifact
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
