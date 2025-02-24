@@ -30,11 +30,9 @@ Section "Install"
   ; Rename .env.example to .env
   Rename "$INSTDIR\.env.example" "$INSTDIR\.env"
 
-  ; Set permissions for Program Files directory
-  AccessControl::GrantOnFile "$INSTDIR" "(S-1-5-32-545)" "ReadAndExecute"
-
-  ; Set permissions for ProgramData directory
-  AccessControl::GrantOnFile "$LOCALAPPDATA\PII Scanner" "(S-1-5-32-545)" "FullAccess"
+  ; Set permissions using built-in commands
+  ExecWait 'cmd.exe /C icacls "$INSTDIR" /grant "Users":(OI)(CI)RX'
+  ExecWait 'cmd.exe /C icacls "$LOCALAPPDATA\PII Scanner" /grant "Users":(OI)(CI)F'
 
   ; Check if Veeam directory exists and copy/rename XML file
   IfFileExists "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service" 0 +3
