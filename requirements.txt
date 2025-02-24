@@ -7,3 +7,4 @@ termcolor>=2.5.0
 sentencepiece==0.1.99  # Use a compatible version
 gliner>=0.1.0
 pyinstaller
+openpyxl 
