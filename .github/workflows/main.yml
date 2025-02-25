@@ -25,10 +25,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install "protobuf<=3.20.0" --force-reinstall
+
+      - name: Download GLiNER models
+        run: |
+          python -c "import os; os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'; from gliner import GLiNER; GLiNER.from_pretrained('urchade/gliner_multi_pii-v1'); GLiNER.from_pretrained('urchade/gliner_multiv2.1')"
+
+      - name: Copy models to build directory
+        run: |
+          mkdir -p dist/models
+          xcopy /E /I "%USERPROFILE%\.cache\huggingface" dist\models
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --uac-admin --add-data ".env.example;." --add-data "pii_scanner.xml;." --hidden-import=sqlite3 pii_scanner.py
+          pyinstaller --onefile --uac-admin --add-data ".env.example;." --add-data "pii_scanner.xml;." --add-data "dist/models;models" --hidden-import=sqlite3 --hidden-import=openpyxl pii_scanner.py
 
       - name: Install NSIS
         run: |
