@@ -80,23 +80,13 @@ Section "Install"
     FileWrite $0 "LOG_FILE=C:\ProgramData\PII Scanner\pii_scanner.log$\r$\n"
     FileClose $0
 
-    ; Set permissions using built-in commands
-    ExecWait 'cmd.exe /C icacls "$INSTDIR" /grant "Users":(OI)(CI)RX'
-    ExecWait 'cmd.exe /C icacls "$LOCALAPPDATA\PII Scanner" /grant "Users":(OI)(CI)F'
-
-    ; Check if Veeam directory exists and copy/rename XML file
-    IfFileExists "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service" 0 +3
-        CopyFiles "$INSTDIR\pii_scanner.xml" "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service\AntivirusInfos.xml"
-        Delete "$INSTDIR\pii_scanner.xml"
-
-    ; Install correct protobuf version
-    MessageBox MB_OK "Installing required dependencies..."
-    ExecWait 'pip install "protobuf<=3.20.0" --force-reinstall'
+    ; Set environment variables for protobuf
+    System::Call 'Kernel32::SetEnvironmentVariable(t "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", t "python")'
 
     ; Download the selected model
     MessageBox MB_OK "The installer will now download the selected GLiNER model. This may take a few minutes."
-    ExecWait 'cmd.exe /c "set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python && python -c "from gliner import GLiNER; model = GLiNER.from_pretrained(\"$ModelSelection\")"'
-
+    ExecWait 'python -c "from gliner import GLiNER; model = GLiNER.from_pretrained(\"$ModelSelection\")"'
+    
     ; Notify user about completion
     MessageBox MB_OK "Installation complete. The model has been downloaded and configured."
 SectionEnd
