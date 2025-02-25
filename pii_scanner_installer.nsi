@@ -36,19 +36,25 @@ Function ModelSelectionPage
     ${NSD_CreateComboBox} 0 25 100% 12u ""
     Pop $ModelComboBox
     
-    ${NSD_CB_AddString} $ModelComboBox "urchade/gliner_multi_pii-v1 - Personal Identifiable Information NER"
-    ${NSD_CB_AddString} $ModelComboBox "urchade/gliner_multiv2.1 - Generalist NER"
+    ; Updated strings to match exact model names
+    ${NSD_CB_AddString} $ModelComboBox "urchade/gliner_multi_pii-v1"
+    ${NSD_CB_AddString} $ModelComboBox "urchade/gliner_multiv2.1"
     
-    ${NSD_CB_SelectString} $ModelComboBox "urchade/gliner_multi_pii-v1 - Personal Identifiable Information NER"
+    ; Set default selection
+    ${NSD_CB_SelectString} $ModelComboBox "urchade/gliner_multi_pii-v1"
+
+    ; Add description labels
+    ${NSD_CreateLabel} 0 45 100% 20u "urchade/gliner_multi_pii-v1 - Personal Identifiable Information NER"
+    Pop $0
+    ${NSD_CreateLabel} 0 65 100% 20u "urchade/gliner_multiv2.1 - Generalist NER"
+    Pop $1
 
     nsDialogs::Show
 FunctionEnd
 
 Function ModelSelectionPageLeave
+    ; Get selected model directly
     ${NSD_GetText} $ModelComboBox $ModelSelection
-    ${StrStr} $0 $ModelSelection "urchade/"
-    ${StrStr} $1 $0 " -"
-    StrCpy $ModelSelection $1 -2
 FunctionEnd
 
 Section "Install"
@@ -82,6 +88,10 @@ Section "Install"
     IfFileExists "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service" 0 +3
         CopyFiles "$INSTDIR\pii_scanner.xml" "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service\AntivirusInfos.xml"
         Delete "$INSTDIR\pii_scanner.xml"
+
+    ; Install correct protobuf version
+    MessageBox MB_OK "Installing required dependencies..."
+    ExecWait 'pip install "protobuf<=3.20.0" --force-reinstall'
 
     ; Download the selected model
     MessageBox MB_OK "The installer will now download the selected GLiNER model. This may take a few minutes."
