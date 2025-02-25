@@ -43,7 +43,7 @@ Function ModelSelectionPage
     ; Set default selection
     ${NSD_CB_SelectString} $ModelComboBox "urchade/gliner_multi_pii-v1"
 
-    ; Add description labels with improved spacing and descriptions
+    ; Add description labels with improved spacing
     ${NSD_CreateLabel} 0 55 100% 30u "urchade/gliner_multi_pii-v1 - Specialized model for detecting Personal Identifiable Information (names, addresses, SSN, credit cards, etc.)"
     Pop $0
     ${NSD_CreateLabel} 0 85 100% 30u "urchade/gliner_multiv2.1 - General-purpose Named Entity Recognition model for detecting organizations, locations, dates, and other entities"
@@ -60,6 +60,7 @@ FunctionEnd
 Section "Install"
     ; Create installation directories
     CreateDirectory "$INSTDIR"
+    CreateDirectory "$INSTDIR\models"
     CreateDirectory "$LOCALAPPDATA\PII Scanner"
 
     ; Copy executable and configuration
@@ -68,25 +69,36 @@ Section "Install"
     File ".env.example"
     File "pii_scanner.xml"
 
-    ; Create .env file with selected model
+    ; Copy pre-downloaded models from build directory
+    SetOutPath "$INSTDIR\models"
+    File /r "dist\models\*.*"
+
+    ; Create .env file with selected model and models path
     FileOpen $0 "$INSTDIR\.env" w
     FileWrite $0 "# Database$\r$\n"
     FileWrite $0 "DB_FILE=C:\ProgramData\PII Scanner\pii_scan_history.db$\r$\n$\r$\n"
     FileWrite $0 "# GLiNER Model$\r$\n"
     FileWrite $0 "PII_MODEL_NAME=$ModelSelection$\r$\n"
+    FileWrite $0 "MODELS_PATH=$INSTDIR\models$\r$\n"
     FileWrite $0 "MAX_CHUNK_LENGTH=384$\r$\n$\r$\n"
     FileWrite $0 "# Logging$\r$\n"
     FileWrite $0 "LOG_LEVEL=INFO$\r$\n"
     FileWrite $0 "LOG_FILE=C:\ProgramData\PII Scanner\pii_scanner.log$\r$\n"
     FileClose $0
 
-    ; Set environment variables for protobuf
-    System::Call 'Kernel32::SetEnvironmentVariable(t "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", t "python")'
+    ; Set permissions using built-in commands
+    ExecWait 'cmd.exe /C icacls "$INSTDIR" /grant "Users":(OI)(CI)RX'
+    ExecWait 'cmd.exe /C icacls "$LOCALAPPDATA\PII Scanner" /grant "Users":(OI)(CI)F'
 
-    ; Download the selected model
-    MessageBox MB_OK "The installer will now download the selected GLiNER model. This may take a few minutes."
-    ExecWait 'python -c "from gliner import GLiNER; model = GLiNER.from_pretrained(\"$ModelSelection\")"'
-    
+    ; Check if Veeam directory exists and copy/rename XML file
+    IfFileExists "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service" 0 +3
+        CopyFiles "$INSTDIR\pii_scanner.xml" "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service\AntivirusInfos.xml"
+        Delete "$INSTDIR\pii_scanner.xml"
+
+    ; Create ProgramData directory and set permissions
+    CreateDirectory "C:\ProgramData\PII Scanner"
+    ExecWait 'cmd.exe /C icacls "C:\ProgramData\PII Scanner" /grant "Users":(OI)(CI)F'
+
     ; Notify user about completion
-    MessageBox MB_OK "Installation complete. The model has been downloaded and configured."
+    MessageBox MB_OK "Installation complete. The model has been configured."
 SectionEnd
