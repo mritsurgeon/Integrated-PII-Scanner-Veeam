@@ -95,10 +95,7 @@ Section "Install"
 
     ; Download the selected model
     MessageBox MB_OK "The installer will now download the selected GLiNER model. This may take a few minutes."
-    ExecWait 'python -c "from gliner import GLiNER; model = GLiNER.from_pretrained(\"$ModelSelection\")"'
-    
-    ; Add pause for debugging
-    ExecWait 'cmd /c pause'
+    ExecWait 'cmd.exe /c "set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python && python -c "from gliner import GLiNER; model = GLiNER.from_pretrained(\"$ModelSelection\")"'
 
     ; Notify user about completion
     MessageBox MB_OK "Installation complete. The model has been downloaded and configured."
