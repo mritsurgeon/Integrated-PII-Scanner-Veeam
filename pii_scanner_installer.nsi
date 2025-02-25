@@ -43,10 +43,10 @@ Function ModelSelectionPage
     ; Set default selection
     ${NSD_CB_SelectString} $ModelComboBox "urchade/gliner_multi_pii-v1"
 
-    ; Add description labels
-    ${NSD_CreateLabel} 0 45 100% 20u "urchade/gliner_multi_pii-v1 - Personal Identifiable Information NER"
+    ; Add description labels with improved spacing and descriptions
+    ${NSD_CreateLabel} 0 55 100% 30u "urchade/gliner_multi_pii-v1 - Specialized model for detecting Personal Identifiable Information (names, addresses, SSN, credit cards, etc.)"
     Pop $0
-    ${NSD_CreateLabel} 0 65 100% 20u "urchade/gliner_multiv2.1 - Generalist NER"
+    ${NSD_CreateLabel} 0 85 100% 30u "urchade/gliner_multiv2.1 - General-purpose Named Entity Recognition model for detecting organizations, locations, dates, and other entities"
     Pop $1
 
     nsDialogs::Show
@@ -95,7 +95,10 @@ Section "Install"
 
     ; Download the selected model
     MessageBox MB_OK "The installer will now download the selected GLiNER model. This may take a few minutes."
-    ExecWait 'python -c "from gliner import GLiNER; model = GLiNER.from_pretrained($\"$ModelSelection$\")"'
+    ExecWait 'python -c "from gliner import GLiNER; model = GLiNER.from_pretrained(\"$ModelSelection\")"'
+    
+    ; Add pause for debugging
+    ExecWait 'cmd /c pause'
 
     ; Notify user about completion
     MessageBox MB_OK "Installation complete. The model has been downloaded and configured."
