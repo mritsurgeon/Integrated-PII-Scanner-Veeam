@@ -23,6 +23,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set environment variables
+        run: |
+          echo "PYTHONIOENCODING=utf-8" >> $env:GITHUB_ENV
+          echo "PYTHONUTF8=1" >> $env:GITHUB_ENV
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -48,13 +53,13 @@ jobs:
           
           print('Downloading default PII model: urchade/gliner_multi_pii-v1...')
           model = GLiNER.from_pretrained('urchade/gliner_multi_pii-v1')
-          print('✅ Downloaded urchade/gliner_multi_pii-v1')
+          print('SUCCESS: Downloaded urchade/gliner_multi_pii-v1')
           
           # Test the model works
           test_text = 'John Smith lives at 123 Main Street, email: john@test.com, SSN: 123-45-6789'
           test_labels = ['person', 'address', 'email', 'social security number']
           entities = model.predict_entities(test_text, test_labels)
-          print(f'✅ Model test successful - detected {len(entities)} entities')
+          print(f'SUCCESS: Model test successful - detected {len(entities)} entities')
           
           # Find the cache directory and copy only the PII model
           cache_dir = Path.home() / '.cache' / 'huggingface' / 'hub'
@@ -71,16 +76,16 @@ jobs:
                   
                   # Copy only the PII model
                   shutil.copytree(pii_model_dir, dest_dir / pii_model_dir.name, dirs_exist_ok=True)
-                  print(f'✅ Copied PII model from {pii_model_dir.name}')
+                  print(f'SUCCESS: Copied PII model from {pii_model_dir.name}')
                   
                   # Check size
                   model_size = sum(f.stat().st_size for f in (dest_dir / pii_model_dir.name).rglob('*') if f.is_file())
-                  print(f'📊 Model size: {model_size / (1024*1024):.1f} MB')
+                  print(f'INFO: Model size: {model_size / (1024*1024):.1f} MB')
               else:
-                  print('❌ PII model directory not found in cache')
+                  print('ERROR: PII model directory not found in cache')
                   exit(1)
           else:
-              print('❌ Cache directory not found')
+              print('ERROR: Cache directory not found')
               exit(1)
           "
 
@@ -88,15 +93,15 @@ jobs:
         run: |
           if (Test-Path "models_cache") {
             Copy-Item -Path "models_cache\*" -Destination "dist\models\" -Recurse -Force
-            Write-Host "✅ Model copied to dist/models/"
+            Write-Host "SUCCESS: Model copied to dist/models/"
             
             # Show what was copied
             Get-ChildItem "dist\models\" -Recurse | Measure-Object -Property Length -Sum | ForEach-Object {
               $sizeMB = [math]::Round($_.Sum / 1MB, 1)
-              Write-Host "📊 Total model size: $sizeMB MB"
+              Write-Host "INFO: Total model size: $sizeMB MB"
             }
           } else {
-            Write-Host "❌ models_cache directory not found"
+            Write-Host "ERROR: models_cache directory not found"
             exit 1
           }
 
@@ -107,11 +112,11 @@ jobs:
       - name: Verify build output
         run: |
           if (Test-Path "dist\pii_scanner.exe") {
-            Write-Host "✅ pii_scanner.exe created successfully"
+            Write-Host "SUCCESS: pii_scanner.exe created successfully"
             $fileSize = (Get-Item "dist\pii_scanner.exe").Length
-            Write-Host "📊 Executable size: $([math]::Round($fileSize / 1MB, 1)) MB"
+            Write-Host "INFO: Executable size: $([math]::Round($fileSize / 1MB, 1)) MB"
           } else {
-            Write-Host "❌ pii_scanner.exe not found"
+            Write-Host "ERROR: pii_scanner.exe not found"
             exit 1
           }
 
@@ -126,11 +131,11 @@ jobs:
       - name: Verify installer
         run: |
           if (Test-Path "PII_Scanner_Installer.exe") {
-            Write-Host "✅ Installer created successfully"
+            Write-Host "SUCCESS: Installer created successfully"
             $installerSize = (Get-Item "PII_Scanner_Installer.exe").Length
-            Write-Host "📊 Installer size: $([math]::Round($installerSize / 1MB, 1)) MB"
+            Write-Host "INFO: Installer size: $([math]::Round($installerSize / 1MB, 1)) MB"
           } else {
-            Write-Host "❌ Installer not found"
+            Write-Host "ERROR: Installer not found"
             exit 1
           }
 
