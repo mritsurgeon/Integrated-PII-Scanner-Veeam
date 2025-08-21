@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - feature/html-reports-and-installer-fix
   pull_request:
     branches:
       - main
+      - feature/html-reports-and-installer-fix
 
 jobs:
   build:
