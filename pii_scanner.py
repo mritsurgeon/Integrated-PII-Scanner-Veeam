@@ -242,7 +242,7 @@ def generate_html_content(scan_type, scan_path, incremental=False):
     for pii_type, instances in pii_by_type.items():
         pii_breakdown_rows += f"""
         <tr>
-            <td><span class="pii-type {pii_type.lower().replace(' ', '-')}">{pii_type.title()}</span></td>
+            <td><span class="pii-type" data-pii-type="{pii_type.lower().replace(' ', '-')}">{pii_type.title()}</span></td>
             <td><span class="pii-count">{len(instances)}</span></td>
             <td>{len(instances) / total_files * 100:.1f}%</td>
         </tr>
@@ -426,64 +426,13 @@ def generate_html_content(scan_type, scan_path, incremental=False):
                 font-weight: 600;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
+                color: white;
             }}
-            .pii-type.person {{ background: #e3f2fd; color: #1976d2; }}
-            .pii-type.organization {{ background: #f3e5f5; color: #7b1fa2; }}
-            .pii-type.address {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.email {{ background: #fff3e0; color: #f57c00; }}
-            .pii-type.phone {{ background: #fce4ec; color: #c2185b; }}
-            .pii-type.phone-number {{ background: #fce4ec; color: #c2185b; }}
-            .pii-type.credit-card {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.credit-card-number {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.ssn {{ background: #ffebee; color: #d32f2f; }}
-            .pii-type.social-security-number {{ background: #ffebee; color: #d32f2f; }}
-            .pii-type.passport {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.passport-number {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.bank-account {{ background: #e1f5fe; color: #0277bd; }}
-            .pii-type.bank-account-number {{ background: #e1f5fe; color: #0277bd; }}
-            .pii-type.routing-number {{ background: #e1f5fe; color: #0277bd; }}
-            .pii-type.tax-id {{ background: #fff3e0; color: #f57c00; }}
-            .pii-type.tax-identification-number {{ background: #fff3e0; color: #f57c00; }}
-            .pii-type.driver-license {{ background: #f3e5f5; color: #7b1fa2; }}
-            .pii-type.driver-license-number {{ background: #f3e5f5; color: #7b1fa2; }}
-            .pii-type.health-insurance {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.health-insurance-number {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.medical-record {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.medical-record-number {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.date-of-birth {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.birth-date {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.blood-type {{ background: #ffebee; color: #d32f2f; }}
-            .pii-type.allergies {{ background: #ffebee; color: #d32f2f; }}
-            .pii-type.cvv {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.cvc {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.expiry {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.expiration {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.iban {{ background: #e1f5fe; color: #0277bd; }}
-            .pii-type.account-number {{ background: #e1f5fe; color: #0277bd; }}
-            .pii-type.serial-number {{ background: #f5f5f5; color: #616161; }}
-            .pii-type.vehicle-registration {{ background: #f3e5f5; color: #7b1fa2; }}
-            .pii-type.license-plate {{ background: #f3e5f5; color: #7b1fa2; }}
-            .pii-type.username {{ background: #e3f2fd; color: #1976d2; }}
-            .pii-type.social-media-handle {{ background: #e3f2fd; color: #1976d2; }}
-            .pii-type.digital-signature {{ background: #f5f5f5; color: #616161; }}
-            .pii-type.reservation-number {{ background: #fff3e0; color: #f57c00; }}
-            .pii-type.flight-number {{ background: #fff3e0; color: #f57c00; }}
-            .pii-type.train-ticket {{ background: #fff3e0; color: #f57c00; }}
-            .pii-type.case-number {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.attorney {{ background: #f3e5f5; color: #7b1fa2; }}
-            .pii-type.client {{ background: #e3f2fd; color: #1976d2; }}
-            .pii-type.customer {{ background: #e3f2fd; color: #1976d2; }}
-            .pii-type.customer-id {{ background: #e3f2fd; color: #1976d2; }}
-            .pii-type.patient {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.patient-id {{ background: #e8f5e8; color: #388e3c; }}
-            .pii-type.employee {{ background: #e3f2fd; color: #1976d2; }}
-            .pii-type.position {{ background: #f5f5f5; color: #616161; }}
-            .pii-type.department {{ background: #f5f5f5; color: #616161; }}
-            .pii-type.salary {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.income {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.investment {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.portfolio {{ background: #fff8e1; color: #fbc02d; }}
-            .pii-type.default {{ background: #f5f5f5; color: #616161; }}
+            /* Dynamic PII type styling - colors will be generated per type */
+            .pii-type[data-pii-type] {{
+                /* Base styling - specific colors will be added via JavaScript */
+                background: #007acc;
+            }}
             .file-item {{
                 background: white;
                 padding: 20px;
@@ -636,6 +585,41 @@ def generate_html_content(scan_type, scan_path, incremental=False):
                 <p><strong>Auto-refresh:</strong> This report updates automatically as new PII is detected</p>
             </div>
         </div>
+        
+        <script>
+        // Dynamic PII type color assignment
+        document.addEventListener('DOMContentLoaded', function() {{
+            const piiTypes = document.querySelectorAll('.pii-type[data-pii-type]');
+            const usedColors = new Set();
+            
+            // Predefined color palette for consistent but varied appearance
+            const colorPalette = [
+                '#e3f2fd', '#f3e5f5', '#e8f5e8', '#fff3e0', '#fce4ec', 
+                '#fff8e1', '#ffebee', '#e1f5fe', '#f5f5f5', '#e8f4fd',
+                '#f0f8ff', '#faf0e6', '#f0fff0', '#fff0f5', '#f0f8ff',
+                '#ffe4e1', '#e6e6fa', '#f0f8ff', '#f5f5dc', '#ffe4b5'
+            ];
+            
+            piiTypes.forEach(function(element) {{
+                const piiType = element.getAttribute('data-pii-type');
+                
+                // Generate a consistent color for each PII type
+                let color;
+                if (!usedColors.has(piiType)) {{
+                    // Pick next available color from palette
+                    color = colorPalette[usedColors.size % colorPalette.length];
+                    usedColors.add(piiType);
+                }} else {{
+                    // Use same color for same PII type
+                    color = colorPalette[Array.from(usedColors).indexOf(piiType) % colorPalette.length];
+                }}
+                
+                // Apply the color
+                element.style.background = color;
+                element.style.color = '#333'; // Dark text for readability
+            }});
+        }});
+        </script>
     </body>
     </html>
     """
