@@ -27,18 +27,91 @@ jobs:
           pip install -r requirements.txt
           pip install "protobuf<=3.20.0" --force-reinstall
 
-      - name: Download GLiNER models
-        run: |
-          python -c "import os; os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'; from gliner import GLiNER; GLiNER.from_pretrained('urchade/gliner_multi_pii-v1'); GLiNER.from_pretrained('urchade/gliner_multiv2.1')"
-
-      - name: Copy models to build directory
+      - name: Create models directory
         run: |
           mkdir -p dist/models
-          xcopy /E /I "%USERPROFILE%\.cache\huggingface" dist\models
+          mkdir -p models_cache
+
+      - name: Download Default GLiNER Model (PII-focused)
+        run: |
+          python -c "
+          import os
+          import shutil
+          from pathlib import Path
+          
+          # Set environment variable for protobuf
+          os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+          
+          from gliner import GLiNER
+          
+          print('Downloading default PII model: urchade/gliner_multi_pii-v1...')
+          model = GLiNER.from_pretrained('urchade/gliner_multi_pii-v1')
+          print('✅ Downloaded urchade/gliner_multi_pii-v1')
+          
+          # Test the model works
+          test_text = 'John Smith lives at 123 Main Street, email: john@test.com, SSN: 123-45-6789'
+          test_labels = ['person', 'address', 'email', 'social security number']
+          entities = model.predict_entities(test_text, test_labels)
+          print(f'✅ Model test successful - detected {len(entities)} entities')
+          
+          # Find the cache directory and copy only the PII model
+          cache_dir = Path.home() / '.cache' / 'huggingface' / 'hub'
+          if cache_dir.exists():
+              print(f'Found cache directory: {cache_dir}')
+              
+              # Look for the PII model directory
+              pii_model_dirs = [d for d in cache_dir.iterdir() if 'gliner_multi_pii-v1' in d.name]
+              
+              if pii_model_dirs:
+                  pii_model_dir = pii_model_dirs[0]
+                  dest_dir = Path('models_cache')
+                  dest_dir.mkdir(exist_ok=True)
+                  
+                  # Copy only the PII model
+                  shutil.copytree(pii_model_dir, dest_dir / pii_model_dir.name, dirs_exist_ok=True)
+                  print(f'✅ Copied PII model from {pii_model_dir.name}')
+                  
+                  # Check size
+                  model_size = sum(f.stat().st_size for f in (dest_dir / pii_model_dir.name).rglob('*') if f.is_file())
+                  print(f'📊 Model size: {model_size / (1024*1024):.1f} MB')
+              else:
+                  print('❌ PII model directory not found in cache')
+                  exit(1)
+          else:
+              print('❌ Cache directory not found')
+              exit(1)
+          "
+
+      - name: Copy model to dist directory
+        run: |
+          if (Test-Path "models_cache") {
+            Copy-Item -Path "models_cache\*" -Destination "dist\models\" -Recurse -Force
+            Write-Host "✅ Model copied to dist/models/"
+            
+            # Show what was copied
+            Get-ChildItem "dist\models\" -Recurse | Measure-Object -Property Length -Sum | ForEach-Object {
+              $sizeMB = [math]::Round($_.Sum / 1MB, 1)
+              Write-Host "📊 Total model size: $sizeMB MB"
+            }
+          } else {
+            Write-Host "❌ models_cache directory not found"
+            exit 1
+          }
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --uac-admin --add-data ".env.example;." --add-data "pii_scanner.xml;." --add-data "dist/models;models" --hidden-import=sqlite3 --hidden-import=openpyxl pii_scanner.py
+          pyinstaller --onefile --uac-admin --add-data ".env.example;." --add-data "pii_scanner.xml;." --add-data "dist/models;models" --hidden-import=openpyxl pii_scanner.py
+
+      - name: Verify build output
+        run: |
+          if (Test-Path "dist\pii_scanner.exe") {
+            Write-Host "✅ pii_scanner.exe created successfully"
+            $fileSize = (Get-Item "dist\pii_scanner.exe").Length
+            Write-Host "📊 Executable size: $([math]::Round($fileSize / 1MB, 1)) MB"
+          } else {
+            Write-Host "❌ pii_scanner.exe not found"
+            exit 1
+          }
 
       - name: Install NSIS
         run: |
@@ -48,8 +121,25 @@ jobs:
         run: |
           makensis pii_scanner_installer.nsi
 
+      - name: Verify installer
+        run: |
+          if (Test-Path "PII_Scanner_Installer.exe") {
+            Write-Host "✅ Installer created successfully"
+            $installerSize = (Get-Item "PII_Scanner_Installer.exe").Length
+            Write-Host "📊 Installer size: $([math]::Round($installerSize / 1MB, 1)) MB"
+          } else {
+            Write-Host "❌ Installer not found"
+            exit 1
+          }
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: PII_Scanner_Installer
           path: PII_Scanner_Installer.exe
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PII_Scanner_Executable
+          path: dist/pii_scanner.exe

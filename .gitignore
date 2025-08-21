@@ -32,7 +32,7 @@ env/
 *.swo
 
 # Project specific
-pii_scan_history.db
+reports/
 .env
 *.log
 *.spec

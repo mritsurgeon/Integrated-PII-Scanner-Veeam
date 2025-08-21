@@ -1,7 +1,7 @@
 import warnings
 import sys
 import os
-import io
+from datetime import datetime, timezone
 
 # Disable all warnings (as suggested by GLiNER owner)
 warnings.filterwarnings("ignore")
@@ -33,9 +33,6 @@ os.environ["TQDM_DISABLE"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 
-import sqlite3
-import hashlib
-from datetime import datetime, timezone
 from docx import Document
 from pptx import Presentation
 from openpyxl import load_workbook
@@ -92,9 +89,9 @@ def get_application_path():
         return os.path.dirname(os.path.abspath(__file__))
 
 # Configuration - Pull from environment variables or use defaults
-DB_FILE = os.getenv("DB_FILE", os.path.join(os.environ.get("PROGRAMDATA", ""),
+REPORT_OUTPUT_DIR = os.getenv("REPORT_OUTPUT_DIR", os.path.join(os.environ.get("PROGRAMDATA", ""),
                                            "PII Scanner",
-                                           "pii_scan_history.db"))
+                                           "reports"))
 ALLOWED_FILE_TYPES = {".doc", ".docx", ".xlsx", ".pptx", ".txt"}
 MAX_CHUNK_LENGTH = int(os.getenv("MAX_CHUNK_LENGTH", "384"))  # Changed default to 384
 LITE_SCAN_LIMIT = 1024 * 1024  # 1MB limit for lite scan
@@ -124,11 +121,11 @@ EXIT_SUCCESS = 0
 EXIT_PII_FOUND = 1
 EXIT_FILE_NOT_FOUND = 2
 EXIT_UNSUPPORTED_FILE = 3
-EXIT_DB_ERROR = 4
-EXIT_TOKENIZER_INIT_ERROR = 5
-EXIT_GLINER_INIT_ERROR = 6
-EXIT_NLTK_INIT_ERROR = 7
-EXIT_CHECKSUM_ERROR = 8
+EXIT_REPORT_ERROR = 4
+EXIT_CONFIG_ERROR = 5
+EXIT_TOKENIZER_INIT_ERROR = 6
+EXIT_GLINER_INIT_ERROR = 7
+EXIT_NLTK_INIT_ERROR = 8
 EXIT_TEXT_EXTRACTION_ERROR = 9
 EXIT_TEXT_CHUNKING_ERROR = 10
 EXIT_PII_DETECTION_ERROR = 11
@@ -136,9 +133,336 @@ EXIT_INVALID_SCAN_TYPE = 12
 EXIT_MISSING_PATH = 13
 EXIT_GENERAL_ERROR = 99
 
-# Ensure directories exist
-os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+# Global scan results storage
+scan_results = []
+
+def validate_config():
+    """Validate configuration and environment setup."""
+    try:
+        # Ensure required directories exist
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        os.makedirs(REPORT_OUTPUT_DIR, exist_ok=True)
+        
+        # Validate PII model configuration
+        if not PII_MODEL_NAME:
+            raise ValueError("PII_MODEL_NAME is not configured")
+        
+        # Validate chunk length
+        if MAX_CHUNK_LENGTH <= 0:
+            raise ValueError("MAX_CHUNK_LENGTH must be positive")
+        
+        logger.info("Configuration validation passed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        return False
+
+def store_scan_result(file_path, pii_entities, file_size, file_modified, scan_type):
+    """Store scan results in memory for HTML report generation."""
+    try:
+        scan_result = {
+            "file_path": file_path,
+            "scan_time": datetime.now(timezone.utc).isoformat(),
+            "file_size": file_size,
+            "file_modified": file_modified,
+            "scan_type": scan_type,
+            "pii_entities": pii_entities,
+            "pii_count": len(pii_entities) if pii_entities else 0,
+            "has_pii": len(pii_entities) > 0 if pii_entities else False
+        }
+        scan_results.append(scan_result)
+        logger.info(f"Scan result stored for: {file_path}")
+        
+    except Exception as e:
+        logger.error(f"Error storing scan result: {e}")
+        raise
+
+def generate_html_report(scan_type, scan_path):
+    """Generate a comprehensive HTML report of all scan results."""
+    try:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+        report_filename = f"pii_scan_report_{scan_type}_{timestamp}.html"
+        report_path = os.path.join(REPORT_OUTPUT_DIR, report_filename)
+        
+        # Calculate summary statistics
+        total_files = len(scan_results)
+        files_with_pii = sum(1 for result in scan_results if result["has_pii"])
+        total_pii_entities = sum(result["pii_count"] for result in scan_results)
+        
+        # Group PII entities by type
+        pii_by_type = {}
+        for result in scan_results:
+            if result["pii_entities"]:
+                for entity in result["pii_entities"]:
+                    label = entity["label"]
+                    if label not in pii_by_type:
+                        pii_by_type[label] = []
+                    pii_by_type[label].append({
+                        "text": entity["text"],
+                        "file": result["file_path"]
+                    })
+        
+        # Generate HTML content
+        html_content = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PII Scan Report - {scan_type.title()} Scan</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }}
+        .header {{
+            text-align: center;
+            border-bottom: 3px solid #007acc;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }}
+        .header h1 {{
+            color: #007acc;
+            margin: 0;
+            font-size: 2.5em;
+        }}
+        .summary {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }}
+        .summary-card {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }}
+        .summary-card h3 {{
+            margin: 0 0 10px 0;
+            font-size: 1.2em;
+        }}
+        .summary-card .number {{
+            font-size: 2.5em;
+            font-weight: bold;
+        }}
+        .pii-breakdown {{
+            margin-bottom: 30px;
+        }}
+        .pii-type {{
+            background: #f8f9fa;
+            border-left: 4px solid #007acc;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }}
+        .pii-type h3 {{
+            color: #007acc;
+            margin: 0 0 10px 0;
+        }}
+        .pii-instance {{
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+        }}
+        .file-details {{
+            margin-bottom: 30px;
+        }}
+        .file-card {{
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }}
+        .file-card.has-pii {{
+            border-left: 4px solid #dc3545;
+            background: #fff5f5;
+        }}
+        .file-card.no-pii {{
+            border-left: 4px solid #28a745;
+            background: #f8fff9;
+        }}
+        .file-path {{
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 10px;
+        }}
+        .file-info {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }}
+        .pii-entities {{
+            margin-top: 10px;
+        }}
+        .pii-entity {{
+            background: white;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }}
+        .pii-label {{
+            font-weight: bold;
+            color: #dc3545;
+        }}
+        .footer {{
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            color: #6c757d;
+        }}
+        .scan-info {{
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 PII Scanner Report</h1>
+            <p>Generated on {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}</p>
+        </div>
+        
+        <div class="scan-info">
+            <h3>📋 Scan Information</h3>
+            <p><strong>Scan Type:</strong> {scan_type.title()}</p>
+            <p><strong>Scan Path:</strong> {scan_path}</p>
+            <p><strong>Report Generated:</strong> {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}</p>
+        </div>
+        
+        <div class="summary">
+            <div class="summary-card">
+                <h3>Total Files</h3>
+                <div class="number">{total_files}</div>
+            </div>
+            <div class="summary-card">
+                <h3>Files with PII</h3>
+                <div class="number">{files_with_pii}</div>
+            </div>
+            <div class="summary-card">
+                <h3>Total PII Entities</h3>
+                <div class="number">{total_pii_entities}</div>
+            </div>
+            <div class="summary-card">
+                <h3>Risk Level</h3>
+                <div class="number">{'🔴 HIGH' if files_with_pii > 0 else '🟢 LOW'}</div>
+            </div>
+        </div>
+"""
+        
+        # Add PII breakdown by type
+        if pii_by_type:
+            html_content += """
+        <div class="pii-breakdown">
+            <h2>📊 PII Breakdown by Type</h2>
+"""
+            for pii_type, instances in pii_by_type.items():
+                html_content += f"""
+            <div class="pii-type">
+                <h3>{pii_type.title()} ({len(instances)} instances)</h3>
+"""
+                for instance in instances:
+                    html_content += f"""
+                <div class="pii-instance">
+                    <strong>Text:</strong> {instance['text']}<br>
+                    <strong>File:</strong> {instance['file']}
+                </div>
+"""
+                html_content += """
+            </div>
+"""
+            html_content += """
+        </div>
+"""
+        
+        # Add detailed file information
+        html_content += """
+        <div class="file-details">
+            <h2>📁 File Details</h2>
+"""
+        
+        for result in scan_results:
+            css_class = "has-pii" if result["has_pii"] else "no-pii"
+            status_icon = "🔴" if result["has_pii"] else "🟢"
+            status_text = "PII Detected" if result["has_pii"] else "No PII Found"
+            
+            html_content += f"""
+            <div class="file-card {css_class}">
+                <div class="file-path">{status_icon} {result['file_path']}</div>
+                <div class="file-info">
+                    <span><strong>Size:</strong> {result['file_size']:,} bytes</span>
+                    <span><strong>Modified:</strong> {result['file_modified']}</span>
+                    <span><strong>Scan Type:</strong> {result['scan_type']}</span>
+                    <span><strong>Status:</strong> {status_text}</span>
+                </div>
+"""
+            
+            if result["has_pii"]:
+                html_content += """
+                <div class="pii-entities">
+                    <strong>PII Entities Found:</strong>
+"""
+                for entity in result["pii_entities"]:
+                    html_content += f"""
+                    <div class="pii-entity">
+                        <span class="pii-label">{entity['label']}:</span> {entity['text']}
+                    </div>
+"""
+                html_content += """
+                </div>
+"""
+            
+            html_content += """
+            </div>
+"""
+        
+        html_content += f"""
+        </div>
+        
+        <div class="footer">
+            <p>Report generated by PII Scanner for Veeam</p>
+            <p>Scan completed at {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        
+        # Write HTML file
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        logger.info(f"HTML report generated successfully: {report_path}")
+        print(f"\n📊 HTML Report Generated: {report_path}")
+        
+        return report_path
+        
+    except Exception as e:
+        logger.error(f"Error generating HTML report: {e}")
+        raise
 
 def init_nltk():
     """Initialize NLTK resources."""
@@ -164,137 +488,15 @@ except Exception as e:
     logger.error(f"Error initializing GLiNER model: {e}")
     gliner_model = None
 
-def init_db():
-    """Initialize the SQLite database."""
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        
-        # Create the scan_history table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS scan_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT NOT NULL,
-                scan_time TEXT NOT NULL,
-                file_size INTEGER,
-                file_modified TEXT,
-                file_checksum TEXT,
-                scan_type TEXT CHECK(scan_type IN ('lite', 'full')),
-                pii_entities TEXT,
-                UNIQUE(file_path, scan_type)
-            )
-        """)
-        conn.commit()
-        logger.debug(f"Database initialized successfully at: {DB_FILE}")  # Changed to debug level
-        
-    except sqlite3.Error as e:
-        logger.warning(f"Database initialization error: {e}")  # Changed to warning level
-        if conn:
-            conn.rollback()
-        sys.exit(EXIT_DB_ERROR)
-    finally:
-        if conn:
-            conn.close()
-
-def calculate_checksum(file_path, scan_type):
-    """Calculate SHA256 checksum of a file."""
-    hasher = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            if scan_type == "lite":
-                chunk = f.read(LITE_SCAN_LIMIT)
-                hasher.update(chunk)
-            else:
-                while True:
-                    chunk = f.read(4096)
-                    if not chunk:
-                        break
-                    hasher.update(chunk)
-        return hasher.hexdigest()
-    except Exception as e:
-        logger.error(f"Error calculating checksum for {file_path}: {e}")
-        return None
-
-def is_file_scanned(file_path, checksum, scan_type):
-    """Check if file has been scanned and return PII entities."""
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT pii_entities FROM scan_history
-            WHERE file_path = ? AND file_checksum = ? AND scan_type = ?
-        """, (file_path, checksum, scan_type))
-        result = cursor.fetchone()
-        if result:
-            pii_entities_str = result[0]
-            if pii_entities_str:
-                return True, eval(pii_entities_str)  # Returns True and the PII entities
-            else:
-                return True, []  # Already scanned, no PII found
-        else:
-            return False, None  # Not scanned yet
-    except sqlite3.Error as e:
-        logger.error(f"Database error checking if file is scanned: {e}")
-        return False, None  # Treat as not scanned
-    finally:
-        if conn:
-            conn.close()
-
-def save_scan_result(file_path, pii_entities, file_size, file_modified, file_checksum, scan_type):
-    """Save scan results to database with improved error handling."""
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        now = datetime.now(timezone.utc).isoformat()
-        
-        # Validate inputs
-        if not isinstance(file_size, int):
-            file_size = int(file_size)
-        
-        if not scan_type in ['lite', 'full']:
-            raise ValueError(f"Invalid scan_type: {scan_type}")
-            
-        if not file_checksum:
-            raise ValueError("file_checksum cannot be None")
-            
-        # Print debug info
-        logger.info("Saving scan result:")
-        logger.info(f"  Path: {file_path}")
-        logger.info(f"  Checksum: {file_checksum}")
-        logger.info(f"  Scan type: {scan_type}")
-            
-        # Insert or update the scan result
-        cursor.execute("""
-            INSERT OR REPLACE INTO scan_history 
-            (file_path, scan_time, file_size, file_modified, file_checksum, scan_type, pii_entities)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (file_path, now, file_size, file_modified, file_checksum, scan_type, str(pii_entities)))
-        
-        conn.commit()
-        logger.info(f"Scan result saved for: {file_path}")
-        
-    except sqlite3.Error as e:
-        logger.error(f"Database error while saving scan result: {e}")
-        logger.error(f"Error details: {str(e)}")
-        if conn:
-            conn.rollback()
-        raise
-    except ValueError as e:
-        logger.error(f"Invalid data error: {e}")
-        raise
-    finally:
-        if conn:
-            conn.close()
-
 def extract_text_from_file(file_path, scan_type):
     """Extract text from various file types."""
     try:
         if file_path.endswith(".txt"):
             with open(file_path, "r", encoding="utf-8") as f:
-                return f.read(LITE_SCAN_LIMIT) if scan_type == "lite" else f.read()
+                if scan_type == "lite":
+                    return f.read(LITE_SCAN_LIMIT)
+                else:
+                    return f.read()
                 
         elif file_path.endswith((".doc", ".docx")):
             document = Document(file_path)
@@ -302,7 +504,8 @@ def extract_text_from_file(file_path, scan_type):
             for paragraph in document.paragraphs:
                 text += paragraph.text + "\n"
                 if scan_type == "lite" and len(text.encode('utf-8')) > LITE_SCAN_LIMIT:
-                    return text[:LITE_SCAN_LIMIT].decode('utf-8', 'ignore')
+                    # Truncate to the limit for lite scans
+                    return text[:LITE_SCAN_LIMIT]
             return text
             
         elif file_path.endswith(".xlsx"):
@@ -315,7 +518,8 @@ def extract_text_from_file(file_path, scan_type):
                     for row in sheet.iter_rows():
                         text += " ".join([str(cell.value) if cell.value is not None else "" for cell in row]) + "\n"
                         if scan_type == "lite" and len(text.encode('utf-8')) > LITE_SCAN_LIMIT:
-                            return text[:LITE_SCAN_LIMIT].decode('utf-8', 'ignore')
+                            # Truncate to the limit for lite scans
+                            return text[:LITE_SCAN_LIMIT]
                 return text
             
         elif file_path.endswith(".pptx"):
@@ -326,7 +530,8 @@ def extract_text_from_file(file_path, scan_type):
                     if hasattr(shape, "text"):
                         text += shape.text + "\n"
                     if scan_type == "lite" and len(text.encode('utf-8')) > LITE_SCAN_LIMIT:
-                        return text[:LITE_SCAN_LIMIT].decode('utf-8', 'ignore')
+                        # Truncate to the limit for lite scans
+                        return text[:LITE_SCAN_LIMIT]
             return text
             
         return None
@@ -432,7 +637,8 @@ def scan_file_for_pii(file_path, scan_type):
         return all_pii_entities
     except Exception as e:
         logger.error(f"Error scanning file {file_path}: {e}")
-        sys.exit(EXIT_PII_DETECTION_ERROR)
+        # Return empty list instead of exiting to allow scanning to continue
+        return []
 
 def process_file(file_path, scan_type):
     """Process a single file for PII scanning."""
@@ -446,32 +652,14 @@ def process_file(file_path, scan_type):
     file_size = os.path.getsize(file_path)
     file_modified = datetime.fromtimestamp(os.path.getmtime(file_path), tz=timezone.utc).isoformat()
     
-    logger.info("Calculating checksum...")
-    file_checksum = calculate_checksum(file_path, scan_type)
-
-    if file_checksum is None:
-        logger.warning(f"Skipping {file_path} due to checksum error.")
-        return
-
-    logger.info(f"Checksum: {file_checksum}")
-
-    already_scanned, previous_pii_entities = is_file_scanned(file_path, file_checksum, scan_type)
-
-    if already_scanned:
-        if previous_pii_entities:
-            labels = ", ".join(sorted(set(entity['label'] for entity in previous_pii_entities)))
-            logger.warning(f"PII data potentially exposed in previously scanned file: {file_path} ({scan_type}): {labels}")
-            print("PII data potentially exposed")
-            print(f"PII_DETECTED: {labels}")
-        else:
-            logger.info(f"Skipping already scanned file: {file_path} ({scan_type}) - No PII found in previous scan")
-        return
+    logger.info(f"File size: {file_size:,} bytes")
+    logger.info(f"File modified: {file_modified}")
 
     logger.info(f"Scanning file for PII: {file_path} ({scan_type})")
     pii_entities = scan_file_for_pii(file_path, scan_type)
 
-    logger.info("Saving results to database...")
-    save_scan_result(file_path, pii_entities, file_size, file_modified, file_checksum, scan_type)
+    logger.info("Storing results for HTML report...")
+    store_scan_result(file_path, pii_entities, file_size, file_modified, scan_type)
 
 def scan_directory(directory, scan_type):
     """Scan all supported files in a directory."""
@@ -479,40 +667,6 @@ def scan_directory(directory, scan_type):
         for file in files:
             file_path = os.path.join(root, file)
             process_file(file_path, scan_type)
-
-# Add a function to verify database
-def verify_database():
-    """Verify database exists and is properly initialized."""
-    conn = None
-    try:
-        if not os.path.exists(DB_FILE):
-            logger.debug(f"Database file not found at: {DB_FILE}")  # Changed to debug level
-            init_db()
-            return
-            
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        
-        # Check if table exists
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name='scan_history'
-        """)
-        
-        if not cursor.fetchone():
-            logger.debug("Database exists but missing required table.")  # Changed to debug level
-            if conn:
-                conn.close()
-            init_db()
-        else:
-            logger.debug("Database verified successfully.")  # Changed to debug level
-            
-    except sqlite3.Error as e:
-        logger.warning(f"Database verification error: {e}")  # Changed to warning level
-        sys.exit(EXIT_DB_ERROR)
-    finally:
-        if conn:
-            conn.close()
 
 def custom_formatwarning(message, category, filename, lineno, line=None):
     """Custom format for UserWarning, logs it as INFO."""
@@ -523,7 +677,6 @@ warnings.formatwarning = custom_formatwarning
 
 if __name__ == "__main__":
     try:
-        verify_database()
         init_nltk()
         
         parser = argparse.ArgumentParser(description="PII Scanner with Lite and Full Scan Options")
@@ -551,8 +704,14 @@ if __name__ == "__main__":
             logger.error("Failed to initialize required models")
             sys.exit(EXIT_GLINER_INIT_ERROR)
 
+        # Validate configuration
+        if not validate_config():
+            sys.exit(EXIT_CONFIG_ERROR)
+
         # Scan directory using process_file
         pii_found = False
+        scan_errors = []
+        
         for root, _, files in os.walk(args.path):
             for file in files:
                 file_path = os.path.join(root, file)
@@ -563,27 +722,37 @@ if __name__ == "__main__":
                     # Use process_file instead of scan_file_for_pii directly
                     process_file(file_path, args.scan_type)
                     
-                    # Check if PII was found by querying the database
-                    conn = sqlite3.connect(DB_FILE)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT pii_entities 
-                        FROM scan_history 
-                        WHERE file_path = ? AND scan_type = ?
-                    """, (file_path, args.scan_type))
-                    
-                    result = cursor.fetchone()
-                    if result and result[0] != '[]':
-                        pii_found = True
-                    
-                    conn.close()
+                    # Check if PII was found by checking the stored results
+                    for result in scan_results:
+                        if result["file_path"] == file_path and result["has_pii"]:
+                            pii_found = True
+                            break
                         
                 except FileNotFoundError:
-                    logger.error(f"File not found: {file_path}")
-                    sys.exit(EXIT_FILE_NOT_FOUND)
+                    error_msg = f"File not found: {file_path}"
+                    logger.error(error_msg)
+                    scan_errors.append(error_msg)
                 except Exception as e:
-                    logger.error(f"Error processing file {file_path}: {e}")
-                    sys.exit(EXIT_GENERAL_ERROR)
+                    error_msg = f"Error processing file {file_path}: {e}"
+                    logger.error(error_msg)
+                    scan_errors.append(error_msg)
+                    # Continue scanning other files instead of exiting
+
+        # Report any errors that occurred during scanning
+        if scan_errors:
+            logger.warning(f"Encountered {len(scan_errors)} errors during scanning:")
+            for error in scan_errors:
+                logger.warning(f"  - {error}")
+            print(f"\n⚠️  {len(scan_errors)} errors occurred during scanning. Check logs for details.")
+
+        # Generate HTML report
+        try:
+            logger.info("Generating HTML report...")
+            report_path = generate_html_report(args.scan_type, args.path)
+            logger.info(f"HTML report generated successfully: {report_path}")
+        except Exception as e:
+            logger.error(f"Error generating HTML report: {e}")
+            sys.exit(EXIT_REPORT_ERROR)
 
         logger.info("Scanning complete.")
         sys.exit(EXIT_PII_FOUND if pii_found else EXIT_SUCCESS)

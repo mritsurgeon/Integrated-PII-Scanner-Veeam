@@ -1,6 +1,6 @@
 # PII Scanner for Veeam
 
-A Python-based PII scanner that integrates with Veeam backup solutions, using GLiNER for accurate PII detection.
+A Python-based PII scanner that integrates with Veeam backup solutions, using GLiNER for accurate PII detection and generating comprehensive HTML reports.
 
 ## Key Features
 
@@ -8,19 +8,23 @@ A Python-based PII scanner that integrates with Veeam backup solutions, using GL
   - `full`: Complete document analysis (recommended for detailed PII discovery)
   - `lite`: Quick 1MB scan (ideal for initial file classification)
 - **Efficient Processing**:
-  - Checksum-based duplicate detection
   - Configurable chunk sizes
-  - SQLite database for scan history
+  - HTML report generation with detailed findings
 - **Veeam Integration**:
   - Compatible with Veeam's antivirus scanning interface
   - Supports continuous scanning option
+- **Beautiful HTML Reports**:
+  - Comprehensive scan summaries
+  - PII breakdown by type
+  - File-level details with risk assessment
+  - Professional styling and responsive design
 
 ## Configuration
 
 ### Environment Variables (.env)
 ```bash
-# Database
-DB_FILE=C:\ProgramData\PII Scanner\pii_scan_history.db
+# Report Output
+REPORT_OUTPUT_DIR=C:\ProgramData\PII Scanner\reports
 
 # GLiNER Model
 PII_MODEL_NAME=urchade/gliner_multi_pii-v1
@@ -41,7 +45,7 @@ PII_LABELS_FULL=person,organization,phone number,address,passport number,email,c
 
 ### Create Executable
 ```bash
-pyinstaller --onefile --uac-admin --add-data ".env;." --hidden-import=sqlite3 pii_scanner.py
+pyinstaller --onefile --uac-admin --add-data ".env;." pii_scanner.py
 ```
 
 ### Setup Script (setup.bat)
@@ -49,9 +53,11 @@ pyinstaller --onefile --uac-admin --add-data ".env;." --hidden-import=sqlite3 pi
 @echo off
 mkdir "C:\Program Files\PII Scanner"
 mkdir "C:\ProgramData\PII Scanner"
+mkdir "C:\ProgramData\PII Scanner\reports"
 copy "dist\pii_scanner.exe" "C:\Program Files\PII Scanner\"
 copy ".env" "C:\Program Files\PII Scanner\"
 icacls "C:\ProgramData\PII Scanner" /grant "Users":(OI)(CI)F
+icacls "C:\ProgramData\PII Scanner\reports" /grant "Users":(OI)(CI)F
 ```
 
 ### Veeam Integration (pii_scanner.xml)
@@ -79,6 +85,14 @@ icacls "C:\ProgramData\PII Scanner" /grant "Users":(OI)(CI)F
   pii_scanner.exe path/to/scan --scan-type lite
   ```
 
+### HTML Report Generation
+After each scan, a comprehensive HTML report is automatically generated in the `reports` directory. The report includes:
+
+- **Summary Dashboard**: Total files, files with PII, total PII entities, and risk level
+- **PII Breakdown**: Grouped by type with file locations
+- **File Details**: Individual file information with PII findings
+- **Professional Styling**: Modern, responsive design for easy viewing
+
 ### Veeam Integration Tips
 1. For complete PII discovery:
    - Use `full` scan type
@@ -94,15 +108,15 @@ icacls "C:\ProgramData\PII Scanner" /grant "Users":(OI)(CI)F
 
 <img width="1159" alt="image" src="https://github.com/user-attachments/assets/6d0e130e-291b-4107-a6b6-4a3c955545fb" />
 
-<img width="607" alt="image" src="https://github.com/user-attachments/assets/7957f4f1-7903-452e-be15-51f1a7abc608" />
+<img width="607" alt="image" src="https://github.com/user-attachments/assets/7957f4f1-7903-452e-be15-51f1a3abc608" />
 
-<img width="1215" alt="image" src="https://github.com/user-attachments/assets/f619c99d-aba9-4ac7-b648-2651d9fc4bdd" />
+<img width="1215" alt="image" src="https://github.com/user-attachments/assets/f6197d9d-aba9-4ac7-b648-51d1a3abc608" />
 
 ### Performance Considerations
 - Lite scans process only the first 1MB of files
 - Full scans process entire files
-- Database caching prevents redundant scans
-- Checksum-based detection avoids duplicate processing
+- HTML reports are generated after scanning completion
+- No database overhead - results stored in memory during scan
 
 ## Technical Reference
 
@@ -117,6 +131,7 @@ Options:
   --scan-type [lite|full]  Scan type (default: full)
                           lite: Quick 1MB scan with basic PII detection
                           full: Complete scan with extended PII detection
+  --verbose              Enable verbose logging (DEBUG level)
 ```
 
 ### Exit Codes
@@ -126,31 +141,26 @@ Options:
 | 1 | Warning | PII data found |
 | 2 | Error | File not found |
 | 3 | Error | Unsupported file type |
-| 4 | Error | Database error |
+| 4 | Error | Report generation failed |
 | 5 | Error | Tokenizer initialization failed |
 | 6 | Error | GLiNER model initialization failed |
 | 7 | Error | NLTK initialization failed |
-| 8 | Error | Checksum calculation failed |
-| 9 | Error | Text extraction failed |
-| 10 | Error | Text chunking failed |
-| 11 | Error | PII detection failed |
-| 12 | Error | Invalid scan type |
-| 13 | Error | Missing file path |
+| 8 | Error | Text extraction failed |
+| 9 | Error | Text chunking failed |
+| 10 | Error | PII detection failed |
+| 11 | Error | Invalid scan type |
+| 12 | Error | Missing file path |
 | 99 | Error | General exception |
 
-### Database Schema
-```sql
-CREATE TABLE scan_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_path TEXT NOT NULL,
-    scan_time TEXT NOT NULL,
-    file_size INTEGER,
-    file_modified TEXT,
-    file_checksum TEXT NOT NULL,
-    scan_type TEXT CHECK(scan_type IN ('lite', 'full')),
-    pii_entities TEXT,
-    UNIQUE(file_checksum, scan_type)
-);
+### HTML Report Structure
+```html
+<!-- Report includes: -->
+- Scan information and metadata
+- Summary statistics dashboard
+- PII breakdown by entity type
+- Detailed file information
+- Professional CSS styling
+- Responsive design for all devices
 ```
 
 ## Contributing
@@ -179,13 +189,14 @@ For questions or support, please contact:
 
 ## Data Visualization with PandaAI
 
-The PII Scanner includes integration with PandaAI for visualizing scan results and analyzing PII detection patterns.
+The PII Scanner includes integration with PandaAI for visualizing scan results and analyzing PII detection patterns from HTML reports.
 
 ### Setup PandaAI Integration
 
 1. **Install Requirements**:
 ```bash
-pip install -r Pandas.ai/requirements.txt
+cd Pandas.ai
+pip install -r requirements.txt
 ```
 
 2. **Get PandaAI API Key**:
@@ -197,11 +208,9 @@ pip install -r Pandas.ai/requirements.txt
      pai.api_key.set("YOUR-API-KEY-HERE")
      ```
 
-3. **Configure Database Path**:
-   - Update the db_path in `Pandas.ai/datacollector.py` to point to your SQLite database:
-     ```python
-     db_path = os.path.join('path', 'to', 'pii_scan_history.db')
-     ```
+3. **Configure Reports Path**:
+   - The datacollector automatically looks for HTML reports in the `reports` directory
+   - Ensure reports are generated before running the datacollector
 
 ### Using PandaAI Visualization
 
@@ -222,19 +231,15 @@ python datacollector.py
 - File type analysis
 - Detection patterns
 - Scan performance metrics
+- Risk level assessment
 
-### Schema
-```yaml
-columns:
-- id: Unique scan identifier
-- file_path: Path to scanned file
-- scan_time: Timestamp of scan
-- file_size: Size of scanned file
-- file_modified: Last modification time
-- file_checksum: File hash
-- scan_type: 'lite' or 'full'
-- pii_entities: Detected PII data
-```
+### Data Source
+The PandaAI integration now parses HTML reports instead of SQLite databases, providing:
+- Real-time data from the latest scan reports
+- Comprehensive scan metadata
+- File-level PII findings
+- Risk assessment data
+
 ### Screenshots 
 
 <img width="1501" alt="image" src="https://github.com/user-attachments/assets/ae74a474-f192-4f00-9722-f2318e3ea231" />
