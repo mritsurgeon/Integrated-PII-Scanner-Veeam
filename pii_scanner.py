@@ -189,6 +189,8 @@ def generate_html_report(scan_type, scan_path):
         total_files = len(scan_results)
         files_with_pii = sum(1 for result in scan_results if result["has_pii"])
         total_pii_entities = sum(result["pii_count"] for result in scan_results)
+        total_size_bytes = sum(os.path.getsize(result["file_path"]) for result in scan_results)
+        total_size_mb = total_size_bytes / (1024 * 1024)
         
         # Group PII entities by type
         pii_by_type = {}
@@ -204,259 +206,346 @@ def generate_html_report(scan_type, scan_path):
                     })
         
         # Generate HTML content
-        html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PII Scan Report - {scan_type.title()} Scan</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }}
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-        }}
-        .header {{
-            text-align: center;
-            border-bottom: 3px solid #007acc;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }}
-        .header h1 {{
-            color: #007acc;
-            margin: 0;
-            font-size: 2.5em;
-        }}
-        .summary {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        .summary-card {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-        }}
-        .summary-card h3 {{
-            margin: 0 0 10px 0;
-            font-size: 1.2em;
-        }}
-        .summary-card .number {{
-            font-size: 2.5em;
-            font-weight: bold;
-        }}
-        .pii-breakdown {{
-            margin-bottom: 30px;
-        }}
-        .pii-type {{
-            background: #f8f9fa;
-            border-left: 4px solid #007acc;
-            padding: 15px;
-            margin-bottom: 15px;
-            border-radius: 5px;
-        }}
-        .pii-type h3 {{
-            color: #007acc;
-            margin: 0 0 10px 0;
-        }}
-        .pii-instance {{
-            background: white;
-            padding: 10px;
-            margin: 5px 0;
-            border-radius: 5px;
-            border: 1px solid #e9ecef;
-        }}
-        .file-details {{
-            margin-bottom: 30px;
-        }}
-        .file-card {{
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }}
-        .file-card.has-pii {{
-            border-left: 4px solid #dc3545;
-            background: #fff5f5;
-        }}
-        .file-card.no-pii {{
-            border-left: 4px solid #28a745;
-            background: #f8fff9;
-        }}
-        .file-path {{
-            font-weight: bold;
-            color: #495057;
-            margin-bottom: 10px;
-        }}
-        .file-info {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 10px;
-            font-size: 0.9em;
-            color: #6c757d;
-        }}
-        .pii-entities {{
-            margin-top: 10px;
-        }}
-        .pii-entity {{
-            background: white;
-            padding: 8px;
-            margin: 5px 0;
-            border-radius: 5px;
-            border: 1px solid #dee2e6;
-        }}
-        .pii-label {{
-            font-weight: bold;
-            color: #dc3545;
-        }}
-        .footer {{
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #e9ecef;
-            color: #6c757d;
-        }}
-        .scan-info {{
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔍 PII Scanner Report</h1>
-            <p>Generated on {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}</p>
-        </div>
-        
-        <div class="scan-info">
-            <h3>📋 Scan Information</h3>
-            <p><strong>Scan Type:</strong> {scan_type.title()}</p>
-            <p><strong>Scan Path:</strong> {scan_path}</p>
-            <p><strong>Report Generated:</strong> {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}</p>
-        </div>
-        
-        <div class="summary">
-            <div class="summary-card">
-                <h3>Total Files</h3>
-                <div class="number">{total_files}</div>
-            </div>
-            <div class="summary-card">
-                <h3>Files with PII</h3>
-                <div class="number">{files_with_pii}</div>
-            </div>
-            <div class="summary-card">
-                <h3>Total PII Entities</h3>
-                <div class="number">{total_pii_entities}</div>
-            </div>
-            <div class="summary-card">
-                <h3>Risk Level</h3>
-                <div class="number">{'🔴 HIGH' if files_with_pii > 0 else '🟢 LOW'}</div>
-            </div>
-        </div>
+        pii_breakdown_rows = ""
+        for pii_type, instances in pii_by_type.items():
+            pii_breakdown_rows += f"""
+            <tr>
+                <td><span class="pii-type {pii_type.lower().replace(' ', '-')}">{pii_type.title()}</span></td>
+                <td><span class="pii-count">{len(instances)}</span></td>
+                <td>{len(instances) / total_files * 100:.1f}%</td>
+            </tr>
 """
-        
-        # Add PII breakdown by type
-        if pii_by_type:
-            html_content += """
-        <div class="pii-breakdown">
-            <h2>📊 PII Breakdown by Type</h2>
-"""
-            for pii_type, instances in pii_by_type.items():
-                html_content += f"""
-            <div class="pii-type">
-                <h3>{pii_type.title()} ({len(instances)} instances)</h3>
-"""
-                for instance in instances:
-                    html_content += f"""
-                <div class="pii-instance">
-                    <strong>Text:</strong> {instance['text']}<br>
-                    <strong>File:</strong> {instance['file']}
-                </div>
-"""
-                html_content += """
-            </div>
-"""
-            html_content += """
-        </div>
-"""
-        
-        # Add detailed file information
-        html_content += """
-        <div class="file-details">
-            <h2>📁 File Details</h2>
-"""
-        
+
+        file_details_html = ""
         for result in scan_results:
             css_class = "has-pii" if result["has_pii"] else "no-pii"
-            status_icon = "🔴" if result["has_pii"] else "🟢"
-            status_text = "PII Detected" if result["has_pii"] else "No PII Found"
+            status_icon = "PII Detected" if result["has_pii"] else "No PII Found"
             
-            html_content += f"""
-            <div class="file-card {css_class}">
-                <div class="file-path">{status_icon} {result['file_path']}</div>
-                <div class="file-info">
-                    <span><strong>Size:</strong> {result['file_size']:,} bytes</span>
-                    <span><strong>Modified:</strong> {result['file_modified']}</span>
-                    <span><strong>Scan Type:</strong> {result['scan_type']}</span>
-                    <span><strong>Status:</strong> {status_text}</span>
+            file_details_html += f"""
+            <div class="file-item {css_class}">
+                <div class="file-header">
+                    <h4 class="file-name">{result['file_path']}</h4>
+                    <span class="pii-count">{result['pii_count']}</span>
+                </div>
+                <div class="file-meta">
+                    <p><strong>Size:</strong> {result['file_size']:,} bytes</p>
+                    <p><strong>Modified:</strong> {result['file_modified']}</p>
+                    <p><strong>Scan Type:</strong> {result['scan_type']}</p>
+                    <p><strong>Status:</strong> {status_icon}</p>
                 </div>
 """
             
             if result["has_pii"]:
-                html_content += """
+                file_details_html += """
                 <div class="pii-entities">
                     <strong>PII Entities Found:</strong>
 """
                 for entity in result["pii_entities"]:
-                    html_content += f"""
+                    file_details_html += f"""
                     <div class="pii-entity">
                         <span class="pii-label">{entity['label']}:</span> {entity['text']}
                     </div>
 """
-                html_content += """
+                file_details_html += """
                 </div>
 """
             
-            html_content += """
+            file_details_html += """
             </div>
 """
         
-        html_content += f"""
-        </div>
-        
-        <div class="footer">
-            <p>Report generated by PII Scanner for Veeam</p>
-            <p>Scan completed at {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}</p>
-        </div>
-    </div>
-</body>
-</html>
-"""
+        # Generate HTML report
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>PII Scanner Report - {scan_type.title()} Scan</title>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    margin: 0;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                    color: #333;
+                }}
+                .container {{
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+                }}
+                .header {{
+                    text-align: center;
+                    border-bottom: 3px solid #007acc;
+                    padding-bottom: 20px;
+                    margin-bottom: 30px;
+                }}
+                .header h1 {{
+                    color: #007acc;
+                    margin: 0;
+                    font-size: 2.5em;
+                }}
+                .header p {{
+                    color: #666;
+                    font-size: 1.1em;
+                    margin: 10px 0 0 0;
+                }}
+                .summary {{
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 25px;
+                    border-radius: 10px;
+                    margin-bottom: 30px;
+                    text-align: center;
+                }}
+                .summary h2 {{
+                    margin: 0 0 15px 0;
+                    font-size: 1.8em;
+                }}
+                .stats {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 20px;
+                    margin-top: 20px;
+                }}
+                .stat {{
+                    background: rgba(255,255,255,0.2);
+                    padding: 15px;
+                    border-radius: 8px;
+                    text-align: center;
+                }}
+                .stat-number {{
+                    font-size: 2em;
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                }}
+                .stat-label {{
+                    font-size: 0.9em;
+                    opacity: 0.9;
+                }}
+                .section {{
+                    margin-bottom: 40px;
+                    background: #fafafa;
+                    padding: 25px;
+                    border-radius: 10px;
+                    border-left: 4px solid #007acc;
+                }}
+                .section h2 {{
+                    color: #007acc;
+                    margin-top: 0;
+                    font-size: 1.6em;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }}
+                .section h3 {{
+                    color: #555;
+                    margin-top: 25px;
+                    margin-bottom: 15px;
+                    font-size: 1.3em;
+                }}
+                .pii-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 15px;
+                    background: white;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }}
+                .pii-table th {{
+                    background: #007acc;
+                    color: white;
+                    padding: 15px;
+                    text-align: left;
+                    font-weight: 600;
+                }}
+                .pii-table td {{
+                    padding: 12px 15px;
+                    border-bottom: 1px solid #eee;
+                }}
+                .pii-table tr:hover {{
+                    background-color: #f8f9fa;
+                }}
+                .pii-type {{
+                    display: inline-block;
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 0.85em;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }}
+                .pii-type.person {{ background: #e3f2fd; color: #1976d2; }}
+                .pii-type.organization {{ background: #f3e5f5; color: #7b1fa2; }}
+                .pii-type.address {{ background: #e8f5e8; color: #388e3c; }}
+                .pii-type.email {{ background: #fff3e0; color: #f57c00; }}
+                .pii-type.phone {{ background: #fce4ec; color: #c2185b; }}
+                .pii-type.credit-card {{ background: #fff8e1; color: #fbc02d; }}
+                .pii-type.ssn {{ background: #ffebee; color: #d32f2f; }}
+                .pii-type.default {{ background: #f5f5f5; color: #616161; }}
+                .file-item {{
+                    background: white;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-bottom: 15px;
+                    border: 1px solid #e0e0e0;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+                }}
+                .file-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 15px;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid #f0f0f0;
+                }}
+                .file-name {{
+                    font-weight: 600;
+                    color: #333;
+                    font-size: 1.1em;
+                }}
+                .file-meta {{
+                    color: #666;
+                    font-size: 0.9em;
+                }}
+                .pii-count {{
+                    background: #007acc;
+                    color: white;
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 0.85em;
+                    font-weight: 600;
+                }}
+                .no-pii {{
+                    color: #28a745;
+                    font-style: italic;
+                    text-align: center;
+                    padding: 20px;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                    border: 1px dashed #28a745;
+                }}
+                .footer {{
+                    text-align: center;
+                    margin-top: 40px;
+                    padding-top: 20px;
+                    border-top: 1px solid #eee;
+                    color: #666;
+                    font-size: 0.9em;
+                }}
+                .scan-info {{
+                    background: #e8f4fd;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-bottom: 30px;
+                    border-left: 4px solid #007acc;
+                }}
+                .scan-info h3 {{
+                    margin-top: 0;
+                    color: #007acc;
+                }}
+                .scan-info p {{
+                    margin: 5px 0;
+                    color: #555;
+                }}
+                @media (max-width: 768px) {{
+                    .container {{
+                        padding: 15px;
+                        margin: 10px;
+                    }}
+                    .stats {{
+                        grid-template-columns: 1fr;
+                    }}
+                    .pii-table {{
+                        font-size: 0.9em;
+                    }}
+                    .pii-table th,
+                    .pii-table td {{
+                        padding: 8px 10px;
+                    }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>PII Scanner Report</h1>
+                    <p>Generated on {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}</p>
+                    <p>Scan Type: {scan_type.title()} | Scan Path: {scan_path}</p>
+                </div>
+
+                <div class="summary">
+                    <h2>Scan Summary</h2>
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="stat-number">{total_files}</div>
+                            <div class="stat-label">Files Scanned</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number">{total_pii_entities}</div>
+                            <div class="stat-label">PII Entities Found</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number">{files_with_pii}</div>
+                            <div class="stat-label">Files with PII</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number">{total_size_mb:.1f}</div>
+                            <div class="stat-label">Total Size (MB)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="scan-info">
+                    <h3>Scan Configuration</h3>
+                    <p><strong>Model:</strong> {PII_MODEL_NAME}</p>
+                    <p><strong>Max Chunk Length:</strong> {MAX_CHUNK_LENGTH}</p>
+                    <p><strong>Scan Mode:</strong> {scan_type.title()}</p>
+                    <p><strong>Report Directory:</strong> {REPORT_OUTPUT_DIR}</p>
+                </div>
+
+                <div class="section">
+                    <h2>PII Breakdown by Type</h2>
+                    <table class="pii-table">
+                        <thead>
+                            <tr>
+                                <th>PII Type</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pii_breakdown_rows}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="section">
+                    <h2>File Details</h2>
+                    {file_details_html}
+                </div>
+
+                <div class="footer">
+                    <p>Generated by PII Scanner for Veeam | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    <p>This report contains sensitive information. Handle with appropriate security measures.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
         
         # Write HTML file
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
         logger.info(f"HTML report generated successfully: {report_path}")
-        print(f"\n📊 HTML Report Generated: {report_path}")
+        print(f"\nHTML Report Generated: {report_path}")
         
         return report_path
         
