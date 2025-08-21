@@ -73,9 +73,8 @@ Section "Install"
     File ".env.example"
     File "pii_scanner.xml"
 
-    ; Copy pre-downloaded model (only PII model is included)
-    SetOutPath "$INSTDIR\models"
-    File /r "dist\models\*.*"
+    ; Note: Models will be downloaded on first use to avoid installer size issues
+    ; The GLiNER models are too large (~400MB+) for NSIS to handle efficiently
 
     ; Create .env file with selected model and HTML report configuration
     FileOpen $0 "$INSTDIR\.env" w
@@ -104,16 +103,6 @@ Section "Install"
         CopyFiles "$INSTDIR\pii_scanner.xml" "C:\Program Files\Common Files\Veeam\Backup and Replication\Mount Service\AntivirusInfos.xml"
         Delete "$INSTDIR\pii_scanner.xml"
 
-    ; Create usage information message
-    StrCmp $ModelSelection "urchade/gliner_multi_pii-v1" ShowPIIMessage ShowGeneralMessage
-    
-    ShowPIIMessage:
-        MessageBox MB_OK "Installation complete!$\r$\n$\r$\nPII Scanner has been installed with:$\r$\n- Model: $ModelSelection (PRE-INSTALLED)$\r$\n- HTML reports: C:\ProgramData\PII Scanner\reports$\r$\n- Logs: C:\ProgramData\PII Scanner\pii_scanner.log$\r$\n$\r$\nThe PII detection model is ready for immediate use.$\r$\nCompatible with Veeam Backup & Replication."
-        Goto InstallComplete
-    
-    ShowGeneralMessage:
-        MessageBox MB_OK "Installation complete!$\r$\n$\r$\nPII Scanner has been installed with:$\r$\n- Model: $ModelSelection (WILL DOWNLOAD ON FIRST USE)$\r$\n- HTML reports: C:\ProgramData\PII Scanner\reports$\r$\n- Logs: C:\ProgramData\PII Scanner\pii_scanner.log$\r$\n$\r$\nNote: The selected model will be downloaded automatically$\r$\nwhen you first run a scan. Internet connection required.$\r$\nCompatible with Veeam Backup & Replication."
-        Goto InstallComplete
-    
-    InstallComplete:
+    ; Create usage information message with download-on-demand info
+    MessageBox MB_OK "Installation complete!$\r$\n$\r$\nPII Scanner has been installed with:$\r$\n- Model: $ModelSelection (DOWNLOAD ON FIRST USE)$\r$\n- HTML reports: C:\ProgramData\PII Scanner\reports$\r$\n- Logs: C:\ProgramData\PII Scanner\pii_scanner.log$\r$\n$\r$\nNote: The GLiNER model will be downloaded automatically$\r$\nwhen you first run a scan. Internet connection required.$\r$\n$\r$\nCompatible with Veeam Backup & Replication.$\r$\nReady for immediate use!"
 SectionEnd
