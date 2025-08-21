@@ -432,8 +432,57 @@ def generate_html_content(scan_type, scan_path, incremental=False):
             .pii-type.address {{ background: #e8f5e8; color: #388e3c; }}
             .pii-type.email {{ background: #fff3e0; color: #f57c00; }}
             .pii-type.phone {{ background: #fce4ec; color: #c2185b; }}
+            .pii-type.phone-number {{ background: #fce4ec; color: #c2185b; }}
             .pii-type.credit-card {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.credit-card-number {{ background: #fff8e1; color: #fbc02d; }}
             .pii-type.ssn {{ background: #ffebee; color: #d32f2f; }}
+            .pii-type.social-security-number {{ background: #ffebee; color: #d32f2f; }}
+            .pii-type.passport {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.passport-number {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.bank-account {{ background: #e1f5fe; color: #0277bd; }}
+            .pii-type.bank-account-number {{ background: #e1f5fe; color: #0277bd; }}
+            .pii-type.routing-number {{ background: #e1f5fe; color: #0277bd; }}
+            .pii-type.tax-id {{ background: #fff3e0; color: #f57c00; }}
+            .pii-type.tax-identification-number {{ background: #fff3e0; color: #f57c00; }}
+            .pii-type.driver-license {{ background: #f3e5f5; color: #7b1fa2; }}
+            .pii-type.driver-license-number {{ background: #f3e5f5; color: #7b1fa2; }}
+            .pii-type.health-insurance {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.health-insurance-number {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.medical-record {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.medical-record-number {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.date-of-birth {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.birth-date {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.blood-type {{ background: #ffebee; color: #d32f2f; }}
+            .pii-type.allergies {{ background: #ffebee; color: #d32f2f; }}
+            .pii-type.cvv {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.cvc {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.expiry {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.expiration {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.iban {{ background: #e1f5fe; color: #0277bd; }}
+            .pii-type.account-number {{ background: #e1f5fe; color: #0277bd; }}
+            .pii-type.serial-number {{ background: #f5f5f5; color: #616161; }}
+            .pii-type.vehicle-registration {{ background: #f3e5f5; color: #7b1fa2; }}
+            .pii-type.license-plate {{ background: #f3e5f5; color: #7b1fa2; }}
+            .pii-type.username {{ background: #e3f2fd; color: #1976d2; }}
+            .pii-type.social-media-handle {{ background: #e3f2fd; color: #1976d2; }}
+            .pii-type.digital-signature {{ background: #f5f5f5; color: #616161; }}
+            .pii-type.reservation-number {{ background: #fff3e0; color: #f57c00; }}
+            .pii-type.flight-number {{ background: #fff3e0; color: #f57c00; }}
+            .pii-type.train-ticket {{ background: #fff3e0; color: #f57c00; }}
+            .pii-type.case-number {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.attorney {{ background: #f3e5f5; color: #7b1fa2; }}
+            .pii-type.client {{ background: #e3f2fd; color: #1976d2; }}
+            .pii-type.customer {{ background: #e3f2fd; color: #1976d2; }}
+            .pii-type.customer-id {{ background: #e3f2fd; color: #1976d2; }}
+            .pii-type.patient {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.patient-id {{ background: #e8f5e8; color: #388e3c; }}
+            .pii-type.employee {{ background: #e3f2fd; color: #1976d2; }}
+            .pii-type.position {{ background: #f5f5f5; color: #616161; }}
+            .pii-type.department {{ background: #f5f5f5; color: #616161; }}
+            .pii-type.salary {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.income {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.investment {{ background: #fff8e1; color: #fbc02d; }}
+            .pii-type.portfolio {{ background: #fff8e1; color: #fbc02d; }}
             .pii-type.default {{ background: #f5f5f5; color: #616161; }}
             .file-item {{
                 background: white;
